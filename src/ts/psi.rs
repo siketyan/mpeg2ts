@@ -1,6 +1,6 @@
 use crate::ts::VersionNumber;
 use crate::util::{self, ReadBytesExt, WithCrc32, WriteBytesExt};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 const MAX_SYNTAX_SECTION_LEN: usize = 1021;

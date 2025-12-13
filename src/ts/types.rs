@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::time::Timestamp;
 use crate::ts::TsPacket;
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};

@@ -2,7 +2,7 @@ use super::adaptation_field::AdaptationFieldControl;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
 use crate::ts::{AdaptationField, ContinuityCounter, Pid, TransportScramblingControl};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Cursor, Read, Write};
 
 /// Transport stream packet.

@@ -1,6 +1,6 @@
 //! Time-related constituent elements.
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 /// Timestamp type for PTS/DTS.

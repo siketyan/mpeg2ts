@@ -1,7 +1,7 @@
 use crate::pes::PesPacket;
 use crate::ts::payload::{Bytes, Pes};
 use crate::ts::{Pid, ReadTsPacket, TsPayload};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::collections::HashMap;
 
 /// The `ReadPesPacket` trait allows for reading PES packets from a source.

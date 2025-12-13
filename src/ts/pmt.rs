@@ -2,7 +2,7 @@ use crate::es::StreamType;
 use crate::ts::psi::{Psi, PsiTable, PsiTableHeader, PsiTableSyntax};
 use crate::ts::{Pid, VersionNumber};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 /// Program Map Table.

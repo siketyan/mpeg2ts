@@ -1,7 +1,7 @@
 use crate::es::StreamId;
 use crate::time::{ClockReference, Timestamp};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 const PACKET_START_CODE_PREFIX: u64 = 0x00_0001;

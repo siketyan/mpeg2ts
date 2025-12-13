@@ -1,6 +1,6 @@
+use crate::Result;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt};
 use crate::ts::{AdaptationField, Pid, TsHeader, TsPacket, TsPayload};
-use crate::{ErrorKind, Result};
 use std::collections::HashMap;
 use std::io::Read;
 

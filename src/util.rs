@@ -1,6 +1,6 @@
 use crate::crc::Crc32;
 use crate::ts::TsPacket;
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{self, Read, Write};
 
 #[track_caller]
