@@ -1,5 +1,5 @@
-use crate::ts::payload::Bytes;
 use crate::Result;
+use crate::ts::payload::Bytes;
 use std::io::Read;
 
 /// Payload for null packets.

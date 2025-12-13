@@ -1,5 +1,5 @@
-use crate::ts::payload::Bytes;
 use crate::Result;
+use crate::ts::payload::Bytes;
 use byteorder::WriteBytesExt;
 use std::io::Write;
 

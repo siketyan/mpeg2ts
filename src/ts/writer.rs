@@ -1,5 +1,5 @@
-use crate::ts::TsPacket;
 use crate::Result;
+use crate::ts::TsPacket;
 use std::io::Write;
 
 /// The `WriteTsPacket` trait allows for writing TS packets to a destination.
