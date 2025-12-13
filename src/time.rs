@@ -57,7 +57,7 @@ impl Timestamp {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R, check_bits: u8) -> Result<Self> {
-        let n = track_io!(reader.read_uint(5))?;
+        let n = track_io!(reader.read_uint::<5>())?;
         track_assert_eq!((n >> 36) as u8, check_bits, ErrorKind::InvalidInput);
         track!(Self::from_u64(n))
     }
@@ -69,7 +69,7 @@ impl Timestamp {
         let n3 = self.0 & ((1 << 15) - 1);
 
         let n = (n0 << 36) | (n1 << 33) | (1 << 32) | (n2 << 17) | (1 << 16) | (n3 << 1) | 1;
-        track_io!(writer.write_uint(n, 5))?;
+        track_io!(writer.write_uint::<5>(n))?;
         Ok(())
     }
 }
@@ -110,7 +110,7 @@ impl ClockReference {
     }
 
     pub(crate) fn read_pcr_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint(6))?;
+        let n = track_io!(reader.read_uint::<6>())?;
         let base = n >> 15;
         let extension = n & 0b1_1111_1111;
         Ok(ClockReference(base * 300 + extension))
@@ -121,12 +121,12 @@ impl ClockReference {
         let extension = self.0 % 300;
 
         let n = (base << 15) | extension;
-        track_io!(writer.write_uint(n, 6))?;
+        track_io!(writer.write_uint::<6>(n))?;
         Ok(())
     }
 
     pub(crate) fn read_escr_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint(6))?;
+        let n = track_io!(reader.read_uint::<6>())?;
         track_assert_eq!(n >> 46, 0, ErrorKind::InvalidInput);
 
         track_assert_eq!(n & 1, 1, ErrorKind::InvalidInput);
@@ -161,7 +161,7 @@ impl ClockReference {
             | (base1 << 27)
             | (marker << 42)
             | (base2 << 43);
-        track_io!(writer.write_uint(n, 6))?;
+        track_io!(writer.write_uint::<6>(n))?;
         Ok(())
     }
 }

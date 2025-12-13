@@ -343,12 +343,12 @@ impl PiecewiseRate {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint(3))? as u32;
+        let n = track_io!(reader.read_uint::<3>())? as u32;
         Ok(PiecewiseRate(n & 0x3FFF_FFFF))
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_uint(u64::from(self.0), 3))?;
+        track_io!(writer.write_uint::<3>(u64::from(self.0)))?;
         Ok(())
     }
 }
@@ -394,7 +394,7 @@ impl SeamlessSplice {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint(5))?;
+        let n = track_io!(reader.read_uint::<5>())?;
         Ok(SeamlessSplice {
             splice_type: (n >> 36) as u8,
             dts_next_access_unit: track!(Timestamp::from_u64(n & 0x0F_FFFF_FFFF))?,

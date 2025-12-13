@@ -45,7 +45,7 @@ impl PesHeader {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
-        let packet_start_code_prefix = track_io!(reader.read_uint(3))?;
+        let packet_start_code_prefix = track_io!(reader.read_uint::<3>())?;
         track_assert_eq!(
             packet_start_code_prefix,
             PACKET_START_CODE_PREFIX,
@@ -144,7 +144,7 @@ impl PesHeader {
     }
 
     pub(crate) fn write_to<W: Write>(&self, mut writer: W, pes_header_len: u16) -> Result<()> {
-        track_io!(writer.write_uint(PACKET_START_CODE_PREFIX, 3))?;
+        track_io!(writer.write_uint::<3>(PACKET_START_CODE_PREFIX))?;
         track_io!(writer.write_u8(self.stream_id.as_u8()))?;
         track_io!(writer.write_u16(pes_header_len))?;
 
