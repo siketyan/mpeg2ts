@@ -50,3 +50,74 @@ impl<T: Write> Write for WithCrc32<T> {
         self.stream.flush()
     }
 }
+
+pub trait WriteBytesExt {
+    fn write_u8(&mut self, n: u8) -> std::io::Result<()>;
+    fn write_u16(&mut self, n: u16) -> std::io::Result<()>;
+    fn write_u32(&mut self, n: u32) -> std::io::Result<()>;
+    fn write_uint(&mut self, n: u64, nbytes: usize) -> std::io::Result<()>;
+    fn write_i8(&mut self, n: i8) -> std::io::Result<()>;
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
+}
+
+impl<W: Write> WriteBytesExt for W {
+    fn write_u8(&mut self, n: u8) -> std::io::Result<()> {
+        Write::write_all(self, &[n])
+    }
+    fn write_u16(&mut self, n: u16) -> std::io::Result<()> {
+        Write::write_all(self, &n.to_be_bytes())
+    }
+    fn write_u32(&mut self, n: u32) -> std::io::Result<()> {
+        Write::write_all(self, &n.to_be_bytes())
+    }
+    fn write_uint(&mut self, n: u64, nbytes: usize) -> std::io::Result<()> {
+        let bytes = n.to_be_bytes();
+        Write::write_all(self, &bytes[8 - nbytes..])
+    }
+    fn write_i8(&mut self, n: i8) -> std::io::Result<()> {
+        Write::write_all(self, &[n as u8])
+    }
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        Write::write_all(self, buf)
+    }
+}
+
+pub trait ReadBytesExt {
+    fn read_u8(&mut self) -> std::io::Result<u8>;
+    fn read_u16(&mut self) -> std::io::Result<u16>;
+    fn read_u32(&mut self) -> std::io::Result<u32>;
+    fn read_uint(&mut self, nbytes: usize) -> std::io::Result<u64>;
+    fn read_i8(&mut self) -> std::io::Result<i8>;
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()>;
+}
+
+impl<R: Read> ReadBytesExt for R {
+    fn read_u8(&mut self) -> std::io::Result<u8> {
+        let mut buf = [0; 1];
+        Read::read_exact(self, &mut buf)?;
+        Ok(buf[0])
+    }
+    fn read_u16(&mut self) -> std::io::Result<u16> {
+        let mut buf = [0; 2];
+        Read::read_exact(self, &mut buf)?;
+        Ok(u16::from_be_bytes(buf))
+    }
+    fn read_u32(&mut self) -> std::io::Result<u32> {
+        let mut buf = [0; 4];
+        Read::read_exact(self, &mut buf)?;
+        Ok(u32::from_be_bytes(buf))
+    }
+    fn read_uint(&mut self, nbytes: usize) -> std::io::Result<u64> {
+        let mut buf = [0; 8];
+        Read::read_exact(self, &mut buf[8 - nbytes..])?;
+        Ok(u64::from_be_bytes(buf))
+    }
+    fn read_i8(&mut self) -> std::io::Result<i8> {
+        let mut buf = [0; 1];
+        Read::read_exact(self, &mut buf)?;
+        Ok(buf[0] as i8)
+    }
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        Read::read_exact(self, buf)
+    }
+}
