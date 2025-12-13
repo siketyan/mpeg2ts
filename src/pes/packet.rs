@@ -56,6 +56,28 @@ impl PesHeader {
         let stream_id = StreamId::new(track_io!(reader.read_u8())?);
         let packet_len = track_io!(reader.read_u16::<BigEndian>())?;
 
+        if stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
+            || stream_id.as_u8() == StreamId::PADDING_STREAM
+            || stream_id.as_u8() == StreamId::PRIVATE_STREAM_2
+            || stream_id.as_u8() == StreamId::ECM_STREAM
+            || stream_id.as_u8() == StreamId::EMM_STREAM
+            || stream_id.as_u8() == StreamId::PROGRAM_STREAM_DIRECTORY
+            || stream_id.as_u8() == StreamId::DSM_CC
+            || stream_id.as_u8() == StreamId::H222_1_TYPE_E
+        {
+            let header = PesHeader {
+                stream_id,
+                priority: false,
+                data_alignment_indicator: false,
+                copyright: false,
+                original_or_copy: false,
+                pts: None,
+                dts: None,
+                escr: None,
+            };
+            return Ok((header, packet_len));
+        }
+
         let b = track_io!(reader.read_u8())?;
         track_assert_eq!(
             b & 0b1100_0000,
@@ -126,6 +148,18 @@ impl PesHeader {
         track_io!(writer.write_uint::<BigEndian>(PACKET_START_CODE_PREFIX, 3))?;
         track_io!(writer.write_u8(self.stream_id.as_u8()))?;
         track_io!(writer.write_u16::<BigEndian>(pes_header_len))?;
+
+        if self.stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
+            || self.stream_id.as_u8() == StreamId::PADDING_STREAM
+            || self.stream_id.as_u8() == StreamId::PRIVATE_STREAM_2
+            || self.stream_id.as_u8() == StreamId::ECM_STREAM
+            || self.stream_id.as_u8() == StreamId::EMM_STREAM
+            || self.stream_id.as_u8() == StreamId::PROGRAM_STREAM_DIRECTORY
+            || self.stream_id.as_u8() == StreamId::DSM_CC
+            || self.stream_id.as_u8() == StreamId::H222_1_TYPE_E
+        {
+            return Ok(());
+        }
 
         let n = 0b1000_0000
             | ((self.priority as u8) << 3)
