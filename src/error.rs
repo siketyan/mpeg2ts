@@ -71,7 +71,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.io_error.as_ref()
+        self.io_error.as_ref().map(|e| e as &dyn std::error::Error)
     }
 }
 

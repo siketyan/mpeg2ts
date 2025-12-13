@@ -101,7 +101,7 @@ impl StreamType {
             0xD1 => StreamType::UltraHdVideo,
             0xDB => StreamType::H264WithAes128Cbc,
             0xEA => StreamType::MicrosoftWindowsMediaVideo9,
-            _ => Error::invalid_input(format!("Unknown stream type: {n}")),
+            _ => return Err(Error::invalid_input(format!("Unknown stream type: {n}"))),
         })
     }
 }

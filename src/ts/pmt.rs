@@ -161,7 +161,7 @@ pub struct EsInfo {
 }
 impl EsInfo {
     fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let stream_type = reader.read_u8().and_then(StreamType::from_u8)?;
+        let stream_type = StreamType::from_u8(reader.read_u8()?)?;
         let elementary_pid = Pid::read_from(&mut reader)?;
 
         let n = reader.read_u16()?;
