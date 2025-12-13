@@ -1,7 +1,7 @@
 use crate::es::StreamId;
 use crate::time::{ClockReference, Timestamp};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::io::{Read, Write};
 
 const PACKET_START_CODE_PREFIX: u64 = 0x00_0001;
@@ -46,11 +46,7 @@ impl PesHeader {
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
         let packet_start_code_prefix = reader.read_uint::<3>()?;
-        track_assert_eq!(
-            packet_start_code_prefix,
-            PACKET_START_CODE_PREFIX,
-            ErrorKind::InvalidInput
-        );
+        assert_eq!(packet_start_code_prefix, PACKET_START_CODE_PREFIX,);
 
         let stream_id = StreamId::new(reader.read_u8()?);
         let packet_len = reader.read_u16()?;
@@ -78,23 +74,18 @@ impl PesHeader {
         }
 
         let b = reader.read_u8()?;
-        track_assert_eq!(
-            b & 0b1100_0000,
-            0b1000_0000,
-            ErrorKind::InvalidInput,
-            "Unexpected marker bits"
-        );
+        assert_eq!(b & 0b1100_0000, 0b1000_0000);
         let scrambling_control = (b & 0b0011_0000) >> 4;
         let priority = (b & 0b0000_1000) != 0;
         let data_alignment_indicator = (b & 0b0000_0100) != 0;
         let copyright = (b & 0b0000_0010) != 0;
         let original_or_copy = (b & 0b0000_0001) != 0;
-        track_assert_eq!(scrambling_control, 0, ErrorKind::Unsupported);
+        assert_eq!(scrambling_control, 0);
 
         let b = reader.read_u8()?;
         let pts_flag = (b & 0b1000_0000) != 0;
         let dts_flag = (b & 0b0100_0000) != 0;
-        track_assert_ne!((pts_flag, dts_flag), (false, true), ErrorKind::InvalidInput);
+        assert_ne!((pts_flag, dts_flag), (false, true));
 
         let escr_flag = (b & 0b0010_0000) != 0;
         let es_rate_flag = (b & 0b0001_0000) != 0;
@@ -102,33 +93,33 @@ impl PesHeader {
         let additional_copy_info_flag = (b & 0b0000_0100) != 0;
         let crc_flag = (b & 0b0000_0010) != 0;
         let extension_flag = (b & 0b0000_0001) != 0;
-        track_assert!(!es_rate_flag, ErrorKind::Unsupported);
-        track_assert!(!dsm_trick_mode_flag, ErrorKind::Unsupported);
-        track_assert!(!additional_copy_info_flag, ErrorKind::Unsupported);
-        track_assert!(!crc_flag, ErrorKind::Unsupported);
-        track_assert!(!extension_flag, ErrorKind::Unsupported);
+        assert!(!es_rate_flag);
+        assert!(!dsm_trick_mode_flag);
+        assert!(!additional_copy_info_flag);
+        assert!(!crc_flag);
+        assert!(!extension_flag);
 
         let pes_header_len = reader.read_u8()?;
 
         let mut reader = reader.take(u64::from(pes_header_len));
         let pts = if pts_flag {
             let check_bits = if dts_flag { 3 } else { 2 };
-            Some(track!(Timestamp::read_from(&mut reader, check_bits))?)
+            Some(Timestamp::read_from(&mut reader, check_bits)?)
         } else {
             None
         };
         let dts = if dts_flag {
             let check_bits = 1;
-            Some(track!(Timestamp::read_from(&mut reader, check_bits))?)
+            Some(Timestamp::read_from(&mut reader, check_bits)?)
         } else {
             None
         };
         let escr = if escr_flag {
-            Some(track!(ClockReference::read_escr_from(&mut reader))?)
+            Some(ClockReference::read_escr_from(&mut reader)?)
         } else {
             None
         };
-        track!(crate::util::consume_stuffing_bytes(reader))?;
+        crate::util::consume_stuffing_bytes(reader)?;
 
         let header = PesHeader {
             stream_id,
@@ -167,8 +158,8 @@ impl PesHeader {
             | self.original_or_copy as u8;
         writer.write_u8(n)?;
 
-        if self.dts.is_some() {
-            track_assert!(self.pts.is_some(), ErrorKind::InvalidInput);
+        if self.dts.is_some() && self.pts.is_none() {
+            return Err(Error::invalid_input("DTS cannot be present without PTS"));
         }
         let n = ((self.pts.is_some() as u8) << 7)
             | ((self.dts.is_some() as u8) << 6)
@@ -179,14 +170,14 @@ impl PesHeader {
         writer.write_u8(pes_header_len)?;
         if let Some(x) = self.pts {
             let check_bits = if self.dts.is_some() { 3 } else { 2 };
-            track!(x.write_to(&mut writer, check_bits))?;
+            x.write_to(&mut writer, check_bits)?;
         }
         if let Some(x) = self.dts {
             let check_bits = 1;
-            track!(x.write_to(&mut writer, check_bits))?;
+            x.write_to(&mut writer, check_bits)?;
         }
         if let Some(x) = self.escr {
-            track!(x.write_escr_to(&mut writer))?;
+            x.write_escr_to(&mut writer)?;
         }
 
         Ok(())
