@@ -2,7 +2,7 @@ use super::adaptation_field::AdaptationFieldControl;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
 use crate::ts::{AdaptationField, ContinuityCounter, Pid, TransportScramblingControl};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::io::{Cursor, Read, Write};
 
 /// Transport stream packet.
@@ -26,7 +26,7 @@ impl TsPacket {
         let mut payload_buf = [0; TsPacket::SIZE - 4];
         let payload_len = if let Some(ref payload) = self.payload {
             let mut writer = Cursor::new(&mut payload_buf[..]);
-            track!(payload.write_to(&mut writer))?;
+            payload.write_to(&mut writer)?;
             writer.position() as usize
         } else {
             0
@@ -37,13 +37,12 @@ impl TsPacket {
             .as_ref()
             .map_or(0, |a| a.external_size());
         let free_len = TsPacket::SIZE - 4 - payload_len;
-        track_assert!(
-            required_len <= free_len,
-            ErrorKind::InvalidInput,
-            "No space for adaptation field: required={}, free={}",
-            required_len,
-            free_len,
-        );
+        if required_len > free_len {
+            return Err(Error::invalid_input(format!(
+                "No space for adaptation field: required={}, free={}",
+                required_len, free_len,
+            )));
+        }
 
         let adaptation_field_control = match (
             self.adaptation_field.is_some() || free_len > 0,
@@ -52,29 +51,28 @@ impl TsPacket {
             (true, true) => AdaptationFieldControl::AdaptationFieldAndPayload,
             (true, false) => AdaptationFieldControl::AdaptationFieldOnly,
             (false, true) => AdaptationFieldControl::PayloadOnly,
-            (false, false) => track_panic!(ErrorKind::InvalidInput, "Reserved for future use"),
+            (false, false) => {
+                return Err(Error::invalid_input("Reserved for future use"));
+            }
         };
         let payload_unit_start_indicator = !matches!(
             self.payload,
             Some(TsPayload::Raw(_)) | Some(TsPayload::Null(_)) | None
         );
-        track!(self.header.write_to(
+        self.header.write_to(
             &mut writer,
             adaptation_field_control,
-            payload_unit_start_indicator
-        ))?;
+            payload_unit_start_indicator,
+        )?;
 
         if let Some(ref adaptation_field) = self.adaptation_field {
             let adaptation_field_len = (free_len - 1) as u8;
-            track!(adaptation_field.write_to(&mut writer, adaptation_field_len))?;
+            adaptation_field.write_to(&mut writer, adaptation_field_len)?;
         } else if free_len > 0 {
             let adaptation_field_len = (free_len - 1) as u8;
-            track!(AdaptationField::write_stuffing_bytes(
-                &mut writer,
-                adaptation_field_len
-            ))?;
+            AdaptationField::write_stuffing_bytes(&mut writer, adaptation_field_len)?;
         }
-        track_io!(writer.write_all(&payload_buf[..payload_len]))?;
+        writer.write_all(&payload_buf[..payload_len])?;
         Ok(())
     }
 }
@@ -93,19 +91,25 @@ impl TsHeader {
     pub(super) fn read_from<R: Read>(
         mut reader: R,
     ) -> Result<(Self, AdaptationFieldControl, bool)> {
-        let sync_byte = track_io!(reader.read_u8())?;
-        track_assert_eq!(sync_byte, TsPacket::SYNC_BYTE, ErrorKind::InvalidInput);
+        let sync_byte = reader.read_u8()?;
+        if sync_byte != TsPacket::SYNC_BYTE {
+            return Err(Error::invalid_input(format!(
+                "Expected sync byte 0x{:02x}, got 0x{:02x}",
+                TsPacket::SYNC_BYTE,
+                sync_byte
+            )));
+        }
 
-        let n = track_io!(reader.read_u16())?;
+        let n = reader.read_u16()?;
         let transport_error_indicator = (n & 0b1000_0000_0000_0000) != 0;
         let payload_unit_start_indicator = (n & 0b0100_0000_0000_0000) != 0;
         let transport_priority = (n & 0b0010_0000_0000_0000) != 0;
-        let pid = track!(Pid::new(n & 0b0001_1111_1111_1111))?;
+        let pid = Pid::new(n & 0b0001_1111_1111_1111)?;
 
-        let n = track_io!(reader.read_u8())?;
-        let transport_scrambling_control = track!(TransportScramblingControl::from_u8(n >> 6))?;
-        let adaptation_field_control = track!(AdaptationFieldControl::from_u8((n >> 4) & 0b11))?;
-        let continuity_counter = track!(ContinuityCounter::from_u8(n & 0b1111))?;
+        let n = reader.read_u8()?;
+        let transport_scrambling_control = TransportScramblingControl::from_u8(n >> 6)?;
+        let adaptation_field_control = AdaptationFieldControl::from_u8((n >> 4) & 0b11)?;
+        let continuity_counter = ContinuityCounter::from_u8(n & 0b1111)?;
 
         let header = TsHeader {
             transport_error_indicator,
@@ -127,18 +131,18 @@ impl TsHeader {
         adaptation_field_control: AdaptationFieldControl,
         payload_unit_start_indicator: bool,
     ) -> Result<()> {
-        track_io!(writer.write_u8(TsPacket::SYNC_BYTE))?;
+        writer.write_u8(TsPacket::SYNC_BYTE)?;
 
         let n = ((self.transport_error_indicator as u16) << 15)
             | ((payload_unit_start_indicator as u16) << 14)
             | ((self.transport_priority as u16) << 13)
             | self.pid.as_u16();
-        track_io!(writer.write_u16(n))?;
+        writer.write_u16(n)?;
 
         let n = ((self.transport_scrambling_control as u8) << 6)
             | ((adaptation_field_control as u8) << 4)
             | self.continuity_counter.as_u8();
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         Ok(())
     }
@@ -158,12 +162,12 @@ pub enum TsPayload {
 impl TsPayload {
     fn write_to<W: Write>(&self, writer: W) -> Result<()> {
         match *self {
-            TsPayload::Pat(ref x) => track!(x.write_to(writer)),
-            TsPayload::Pmt(ref x) => track!(x.write_to(writer)),
-            TsPayload::Pes(ref x) => track!(x.write_to(writer)),
-            TsPayload::Section(ref x) => track!(x.write_to(writer)),
+            TsPayload::Pat(ref x) => x.write_to(writer),
+            TsPayload::Pmt(ref x) => x.write_to(writer),
+            TsPayload::Pes(ref x) => x.write_to(writer),
+            TsPayload::Section(ref x) => x.write_to(writer),
             TsPayload::Null(_) => Ok(()),
-            TsPayload::Raw(ref x) => track!(x.write_to(writer)),
+            TsPayload::Raw(ref x) => x.write_to(writer),
         }
     }
 }

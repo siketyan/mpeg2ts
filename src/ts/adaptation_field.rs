@@ -1,7 +1,7 @@
 use crate::time::ClockReference;
 use crate::ts::{LegalTimeWindow, PiecewiseRate, SeamlessSplice};
 use crate::util::{self, ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::io::{Read, Write};
 
 /// Adaptation field.
@@ -47,13 +47,13 @@ impl AdaptationField {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Option<Self>> {
-        let adaptation_field_len = track_io!(reader.read_u8())?;
+        let adaptation_field_len = reader.read_u8()?;
         if adaptation_field_len == 0 {
             return Ok(None);
         }
         let mut reader = reader.take(u64::from(adaptation_field_len));
 
-        let b = track_io!(reader.read_u8())?;
+        let b = reader.read_u8()?;
         let discontinuity_indicator = (b & 0b1000_0000) != 0;
         let random_access_indicator = (b & 0b0100_0000) != 0;
         let es_priority_indicator = (b & 0b0010_0000) != 0;
@@ -64,34 +64,34 @@ impl AdaptationField {
         let extension_flag = (b & 0b0000_0001) != 0;
 
         let pcr = if pcr_flag {
-            Some(track!(ClockReference::read_pcr_from(&mut reader))?)
+            Some(ClockReference::read_pcr_from(&mut reader)?)
         } else {
             None
         };
         let opcr = if opcr_flag {
-            Some(track!(ClockReference::read_pcr_from(&mut reader))?)
+            Some(ClockReference::read_pcr_from(&mut reader)?)
         } else {
             None
         };
         let splice_countdown = if splicing_point_flag {
-            Some(track_io!(reader.read_i8())?)
+            Some(reader.read_i8()?)
         } else {
             None
         };
         let transport_private_data = if transport_private_data_flag {
-            let len = track_io!(reader.read_u8())?;
+            let len = reader.read_u8()?;
             let mut buf = vec![0; len as usize];
-            track_io!(reader.read_exact(&mut buf))?;
+            reader.read_exact(&mut buf)?;
             buf
         } else {
             Vec::new()
         };
         let extension = if extension_flag {
-            Some(track!(AdaptationExtensionField::read_from(&mut reader))?)
+            Some(AdaptationExtensionField::read_from(&mut reader)?)
         } else {
             None
         };
-        track!(util::consume_stuffing_bytes(reader))?;
+        util::consume_stuffing_bytes(reader)?;
 
         Ok(Some(AdaptationField {
             discontinuity_indicator,
@@ -106,20 +106,17 @@ impl AdaptationField {
     }
 
     pub(super) fn write_stuffing_bytes<W: Write>(mut writer: W, field_len: u8) -> Result<()> {
-        track_io!(writer.write_u8(field_len))?;
+        writer.write_u8(field_len)?;
         if field_len == 0 {
             return Ok(());
         }
-        track_io!(writer.write_u8(0))?;
-        track!(util::write_stuffing_bytes(
-            &mut writer,
-            (field_len - 1) as usize
-        ))?;
+        writer.write_u8(0)?;
+        util::write_stuffing_bytes(&mut writer, (field_len - 1) as usize)?;
         Ok(())
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W, field_len: u8) -> Result<()> {
-        track_io!(writer.write_u8(field_len))?;
+        writer.write_u8(field_len)?;
 
         let n = ((self.discontinuity_indicator as u8) << 7)
             | ((self.random_access_indicator as u8) << 6)
@@ -129,24 +126,24 @@ impl AdaptationField {
             | ((self.splice_countdown.is_some() as u8) << 2)
             | (((!self.transport_private_data.is_empty()) as u8) << 1)
             | self.extension.is_some() as u8;
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         if let Some(ref x) = self.pcr {
-            track!(x.write_pcr_to(&mut writer))?;
+            x.write_pcr_to(&mut writer)?;
         }
         if let Some(ref x) = self.opcr {
-            track!(x.write_pcr_to(&mut writer))?;
+            x.write_pcr_to(&mut writer)?;
         }
         if let Some(x) = self.splice_countdown {
-            track_io!(writer.write_i8(x))?;
+            writer.write_i8(x)?;
         }
-        track_io!(writer.write_all(&self.transport_private_data))?;
+        writer.write_all(&self.transport_private_data)?;
         if let Some(ref x) = self.extension {
-            track!(x.write_to(&mut writer))?;
+            x.write_to(&mut writer)?;
         }
 
         let stuffing_len = (field_len + 1) as usize - self.external_size();
-        track!(util::write_stuffing_bytes(writer, stuffing_len))?;
+        util::write_stuffing_bytes(writer, stuffing_len)?;
         Ok(())
     }
 }
@@ -175,31 +172,35 @@ impl AdaptationExtensionField {
     }
 
     fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let extension_len = track_io!(reader.read_u8())?;
+        let extension_len = reader.read_u8()?;
         let mut reader = reader.take(u64::from(extension_len));
 
-        let b = track_io!(reader.read_u8())?;
+        let b = reader.read_u8()?;
         let legal_time_window_flag = (b & 0b1000_0000) != 0;
         let piecewise_rate_flag = (b & 0b0100_0000) != 0;
         let seamless_splice_flag = (b & 0b0010_0000) != 0;
 
         let legal_time_window = if legal_time_window_flag {
-            Some(track!(LegalTimeWindow::read_from(&mut reader))?)
+            Some(LegalTimeWindow::read_from(&mut reader)?)
         } else {
             None
         };
         let piecewise_rate = if piecewise_rate_flag {
-            Some(track!(PiecewiseRate::read_from(&mut reader))?)
+            Some(PiecewiseRate::read_from(&mut reader)?)
         } else {
             None
         };
         let seamless_splice = if seamless_splice_flag {
-            Some(track!(SeamlessSplice::read_from(&mut reader))?)
+            Some(SeamlessSplice::read_from(&mut reader)?)
         } else {
             None
         };
 
-        track_assert_eq!(reader.limit(), 0, ErrorKind::InvalidInput);
+        if reader.limit() != 0 {
+            return Err(Error::invalid_input(
+                "Unexpected data in adaptation extension field",
+            ));
+        }
         Ok(AdaptationExtensionField {
             legal_time_window,
             piecewise_rate,
@@ -208,21 +209,21 @@ impl AdaptationExtensionField {
     }
 
     fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_u8(self.external_size() as u8 - 1))?;
+        writer.write_u8(self.external_size() as u8 - 1)?;
 
         let n = ((self.legal_time_window.is_some() as u8) << 7)
             | ((self.piecewise_rate.is_some() as u8) << 6)
             | ((self.seamless_splice.is_some() as u8) << 5);
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         if let Some(ref x) = self.legal_time_window {
-            track!(x.write_to(&mut writer))?;
+            x.write_to(&mut writer)?;
         }
         if let Some(ref x) = self.piecewise_rate {
-            track!(x.write_to(&mut writer))?;
+            x.write_to(&mut writer)?;
         }
         if let Some(ref x) = self.seamless_splice {
-            track!(x.write_to(&mut writer))?;
+            x.write_to(&mut writer)?;
         }
         Ok(())
     }
@@ -248,8 +249,10 @@ impl AdaptationFieldControl {
             0b01 => AdaptationFieldControl::PayloadOnly,
             0b10 => AdaptationFieldControl::AdaptationFieldOnly,
             0b11 => AdaptationFieldControl::AdaptationFieldAndPayload,
-            0b00 => track_panic!(ErrorKind::InvalidInput, "Reserved for future use"),
-            _ => track_panic!(ErrorKind::InvalidInput, "Unexpected value: {}", n),
+            0b00 => return Err(Error::invalid_input("Reserved for future use")),
+            _ => {
+                return Err(Error::invalid_input(format!("Unexpected value: {}", n)));
+            }
         })
     }
 }

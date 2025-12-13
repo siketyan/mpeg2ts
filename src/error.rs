@@ -45,6 +45,11 @@ impl Error {
     pub(crate) fn invalid_input<T: Into<String>>(reason: T) -> Self {
         Self::new(ErrorKind::InvalidInput, reason)
     }
+
+    #[track_caller]
+    pub(crate) fn unsupported<T: Into<String>>(reason: T) -> Self {
+        Self::new(ErrorKind::Unsupported, reason)
+    }
 }
 
 impl std::fmt::Debug for Error {
