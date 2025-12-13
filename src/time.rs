@@ -1,6 +1,6 @@
 //! Time-related constituent elements.
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::io::{Read, Write};
 
 /// Timestamp type for PTS/DTS.
@@ -19,12 +19,9 @@ impl Timestamp {
     ///
     /// If `n` exceeds `Timestamp::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new(n: u64) -> Result<Self> {
-        track_assert!(
-            n <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large value: {}",
-            n
-        );
+        if n > Self::MAX {
+            return Err(Error::invalid_input(format!("Too large value: {n}")));
+        }
         Ok(Timestamp(n))
     }
 
@@ -34,21 +31,15 @@ impl Timestamp {
     }
 
     pub(crate) fn from_u64(n: u64) -> Result<Self> {
-        track_assert!(
-            (n & 1) != 0,
-            ErrorKind::InvalidInput,
-            "Unexpected marker bit"
-        );
-        track_assert!(
-            ((n >> 16) & 1) != 0,
-            ErrorKind::InvalidInput,
-            "Unexpected marker bit"
-        );
-        track_assert!(
-            ((n >> 32) & 1) != 0,
-            ErrorKind::InvalidInput,
-            "Unexpected marker bit"
-        );
+        if (n & 1) == 0 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
+        if ((n >> 16) & 1) == 0 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
+        if ((n >> 32) & 1) == 0 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
 
         let n0 = n >> (32 + 1) & ((1 << 3) - 1);
         let n1 = n >> (16 + 1) & ((1 << 15) - 1);
@@ -57,9 +48,14 @@ impl Timestamp {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R, check_bits: u8) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<5>())?;
-        track_assert_eq!((n >> 36) as u8, check_bits, ErrorKind::InvalidInput);
-        track!(Self::from_u64(n))
+        let n = reader.read_uint::<5>()?;
+        if (n >> 36) as u8 != check_bits {
+            return Err(Error::invalid_input(format!(
+                "Expected check_bits: {check_bits}, got: {}",
+                (n >> 36) as u8
+            )));
+        }
+        Self::from_u64(n)
     }
 
     pub(crate) fn write_to<W: Write>(&self, mut writer: W, check_bits: u8) -> Result<()> {
@@ -69,7 +65,7 @@ impl Timestamp {
         let n3 = self.0 & ((1 << 15) - 1);
 
         let n = (n0 << 36) | (n1 << 33) | (1 << 32) | (n2 << 17) | (1 << 16) | (n3 << 1) | 1;
-        track_io!(writer.write_uint::<5>(n))?;
+        writer.write_uint::<5>(n)?;
         Ok(())
     }
 }
@@ -95,12 +91,9 @@ impl ClockReference {
     ///
     /// If `n` exceeds `ClockReference::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new(n: u64) -> Result<Self> {
-        track_assert!(
-            n <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large value: {}",
-            n
-        );
+        if n > Self::MAX {
+            return Err(Error::invalid_input(format!("Too large value: {n}")));
+        }
         Ok(ClockReference(n))
     }
 
@@ -110,7 +103,7 @@ impl ClockReference {
     }
 
     pub(crate) fn read_pcr_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<6>())?;
+        let n = reader.read_uint::<6>()?;
         let base = n >> 15;
         let extension = n & 0b1_1111_1111;
         Ok(ClockReference(base * 300 + extension))
@@ -121,21 +114,31 @@ impl ClockReference {
         let extension = self.0 % 300;
 
         let n = (base << 15) | extension;
-        track_io!(writer.write_uint::<6>(n))?;
+        writer.write_uint::<6>(n)?;
         Ok(())
     }
 
     pub(crate) fn read_escr_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<6>())?;
-        track_assert_eq!(n >> 46, 0, ErrorKind::InvalidInput);
+        let n = reader.read_uint::<6>()?;
+        if n >> 46 != 0 {
+            return Err(Error::invalid_input("Expected zero in reserved bits"));
+        }
 
-        track_assert_eq!(n & 1, 1, ErrorKind::InvalidInput);
+        if (n & 1) != 1 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
         let extension = (n >> 1) & 0b1_1111_1111;
 
         let n = n >> 10;
-        track_assert_eq!(n & 1, 1, ErrorKind::InvalidInput);
-        track_assert_eq!((n >> 16) & 1, 1, ErrorKind::InvalidInput);
-        track_assert_eq!((n >> 32) & 1, 1, ErrorKind::InvalidInput);
+        if (n & 1) != 1 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
+        if ((n >> 16) & 1) != 1 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
+        if ((n >> 32) & 1) != 1 {
+            return Err(Error::invalid_input("Unexpected marker bit"));
+        }
 
         let n0 = (n >> 1) & ((1 << 15) - 1);
         let n1 = (n >> 17) & ((1 << 15) - 1);
@@ -161,7 +164,7 @@ impl ClockReference {
             | (base1 << 27)
             | (marker << 42)
             | (base2 << 43);
-        track_io!(writer.write_uint::<6>(n))?;
+        writer.write_uint::<6>(n)?;
         Ok(())
     }
 }

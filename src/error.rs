@@ -31,7 +31,7 @@ pub struct Error {
 
 impl Error {
     #[track_caller]
-    pub fn new<T: Into<String>>(kind: ErrorKind, reason: T) -> Self {
+    fn new<T: Into<String>>(kind: ErrorKind, reason: T) -> Self {
         Self {
             kind,
             reason: reason.into(),
@@ -43,7 +43,7 @@ impl Error {
 
     #[track_caller]
     pub(crate) fn invalid_input<T: Into<String>>(reason: T) -> Self {
-        Self::with_reason(ErrorKind::InvalidInput, reason)
+        Self::new(ErrorKind::InvalidInput, reason)
     }
 }
 
