@@ -45,18 +45,18 @@ mod test {
     #[test]
     fn pat() {
         let mut reader = TsPacketReader::new(pat_packet_bytes());
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
         assert_eq!(packet, pat_packet());
-        assert_eq!(track_try_unwrap!(reader.read_ts_packet()), None);
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
 
         let mut writer = TsPacketWriter::new(Vec::new());
-        track_try_unwrap!(writer.write_ts_packet(&packet));
+        writer.write_ts_packet(&packet).unwrap();
 
         let mut reader = TsPacketReader::new(&writer.stream()[..]);
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
         assert_eq!(packet.header, pat_packet().header);
         assert_eq!(packet.payload, pat_packet().payload);
-        assert_eq!(track_try_unwrap!(reader.read_ts_packet()), None);
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
     }
 
     fn pat_packet_bytes() -> &'static [u8] {
@@ -71,7 +71,8 @@ mod test {
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255,
         ][..]
     }
 
@@ -104,20 +105,20 @@ mod test {
         let mut reader = TsPacketReader::new(&bytes[..]);
         let mut writer = TsPacketWriter::new(Vec::new());
 
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
-        track_try_unwrap!(writer.write_ts_packet(&packet));
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+        writer.write_ts_packet(&packet).unwrap();
 
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
         assert_eq!(packet.header, pmt_packet().header);
         assert_eq!(packet.payload, pmt_packet().payload);
-        track_try_unwrap!(writer.write_ts_packet(&packet));
+        writer.write_ts_packet(&packet).unwrap();
 
         let mut reader = TsPacketReader::new(&writer.stream()[..]);
-        track_try_unwrap!(reader.read_ts_packet()).unwrap();
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
+        reader.read_ts_packet().unwrap().unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
         assert_eq!(packet.header, pmt_packet().header);
         assert_eq!(packet.payload, pmt_packet().payload);
-        assert_eq!(track_try_unwrap!(reader.read_ts_packet()), None);
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
     }
 
     fn pmt_packet_bytes() -> &'static [u8] {
@@ -178,7 +179,7 @@ mod test {
     #[test]
     fn pid17() {
         let mut reader = TsPacketReader::new(pid17_packet_bytes());
-        let packet = track_try_unwrap!(reader.read_ts_packet()).unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
         assert_eq!(packet.header.pid, Pid::from(17));
     }
 
@@ -194,7 +195,7 @@ mod test {
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 25,
+            255, 255, 255, 255, 255, 255, 255, 255, 25,
         ][..]
     }
 }
