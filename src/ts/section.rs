@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::ts::payload::Bytes;
-use byteorder::WriteBytesExt;
+use crate::util::WriteBytesExt;
 use std::io::Write;
 
 /// Payload for Section Stream packets.

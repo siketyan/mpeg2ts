@@ -1,8 +1,8 @@
 use super::adaptation_field::AdaptationFieldControl;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
 use crate::ts::{AdaptationField, ContinuityCounter, Pid, TransportScramblingControl};
+use crate::util::{ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read, Write};
 
 /// Transport stream packet.
@@ -96,7 +96,7 @@ impl TsHeader {
         let sync_byte = track_io!(reader.read_u8())?;
         track_assert_eq!(sync_byte, TsPacket::SYNC_BYTE, ErrorKind::InvalidInput);
 
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         let transport_error_indicator = (n & 0b1000_0000_0000_0000) != 0;
         let payload_unit_start_indicator = (n & 0b0100_0000_0000_0000) != 0;
         let transport_priority = (n & 0b0010_0000_0000_0000) != 0;
@@ -133,7 +133,7 @@ impl TsHeader {
             | ((payload_unit_start_indicator as u16) << 14)
             | ((self.transport_priority as u16) << 13)
             | self.pid.as_u16();
-        track_io!(writer.write_u16::<BigEndian>(n))?;
+        track_io!(writer.write_u16(n))?;
 
         let n = ((self.transport_scrambling_control as u8) << 6)
             | ((adaptation_field_control as u8) << 4)

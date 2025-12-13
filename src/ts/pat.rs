@@ -1,7 +1,7 @@
 use crate::ts::psi::{Psi, PsiTable, PsiTableHeader, PsiTableSyntax};
 use crate::ts::{Pid, VersionNumber};
+use crate::util::{ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 /// Payload for PAT(Program Association Table) packets.
@@ -79,7 +79,7 @@ pub struct ProgramAssociation {
 }
 impl ProgramAssociation {
     fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let program_num = track_io!(reader.read_u16::<BigEndian>())?;
+        let program_num = track_io!(reader.read_u16())?;
         let program_map_pid = track!(Pid::read_from(reader))?;
         Ok(ProgramAssociation {
             program_num,
@@ -88,7 +88,7 @@ impl ProgramAssociation {
     }
 
     fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_u16::<BigEndian>(self.program_num))?;
+        track_io!(writer.write_u16(self.program_num))?;
         track!(self.program_map_pid.write_to(writer))?;
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::time::Timestamp;
 use crate::ts::TsPacket;
+use crate::util::{ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
@@ -41,7 +41,7 @@ impl Pid {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         track_assert_eq!(
             n & 0b1110_0000_0000_0000,
             0b1110_0000_0000_0000,
@@ -53,7 +53,7 @@ impl Pid {
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
         let n = 0b1110_0000_0000_0000 | self.0;
-        track_io!(writer.write_u16::<BigEndian>(n))?;
+        track_io!(writer.write_u16(n))?;
         Ok(())
     }
 }
@@ -300,7 +300,7 @@ impl LegalTimeWindow {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         Ok(LegalTimeWindow {
             is_valid: (n & 0b1000_0000_0000_0000) != 0,
             offset: n & 0b0111_1111_1111_1111,
@@ -309,7 +309,7 @@ impl LegalTimeWindow {
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
         let n = ((self.is_valid as u16) << 15) | self.offset;
-        track_io!(writer.write_u16::<BigEndian>(n))?;
+        track_io!(writer.write_u16(n))?;
         Ok(())
     }
 }
@@ -343,12 +343,12 @@ impl PiecewiseRate {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<BigEndian>(3))? as u32;
+        let n = track_io!(reader.read_uint(3))? as u32;
         Ok(PiecewiseRate(n & 0x3FFF_FFFF))
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_uint::<BigEndian>(u64::from(self.0), 3))?;
+        track_io!(writer.write_uint(u64::from(self.0), 3))?;
         Ok(())
     }
 }
@@ -394,7 +394,7 @@ impl SeamlessSplice {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<BigEndian>(5))?;
+        let n = track_io!(reader.read_uint(5))?;
         Ok(SeamlessSplice {
             splice_type: (n >> 36) as u8,
             dts_next_access_unit: track!(Timestamp::from_u64(n & 0x0F_FFFF_FFFF))?,
