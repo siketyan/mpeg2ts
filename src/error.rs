@@ -7,6 +7,7 @@ pub enum ErrorKind {
     Other,
 }
 
+/// Error type.
 ///
 /// This struct captures the error kind, reason, source location, and backtrace
 /// to provide comprehensive error diagnostics.
