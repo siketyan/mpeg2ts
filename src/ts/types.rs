@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::time::Timestamp;
 use crate::ts::TsPacket;
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
@@ -26,12 +26,12 @@ impl Pid {
     ///
     /// If `pid` exceeds `Pid::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new(pid: u16) -> Result<Self> {
-        track_assert!(
-            pid <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large PID: {}",
-            pid
-        );
+        if pid > Self::MAX {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large PID: {}",
+                pid
+            )));
+        }
         Ok(Pid(pid))
     }
 
@@ -41,19 +41,16 @@ impl Pid {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_u16())?;
-        track_assert_eq!(
-            n & 0b1110_0000_0000_0000,
-            0b1110_0000_0000_0000,
-            ErrorKind::InvalidInput,
-            "Unexpected reserved bits"
-        );
+        let n = reader.read_u16()?;
+        if (n & 0b1110_0000_0000_0000) != 0b1110_0000_0000_0000 {
+            return Err(crate::Error::invalid_input("Unexpected reserved bits"));
+        }
         Ok(Pid(n & 0b0001_1111_1111_1111))
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
         let n = 0b1110_0000_0000_0000 | self.0;
-        track_io!(writer.write_u16(n))?;
+        writer.write_u16(n)?;
         Ok(())
     }
 }
@@ -81,12 +78,12 @@ impl ContinuityCounter {
     ///
     /// If `n` exceeds `ContinuityCounter::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn from_u8(n: u8) -> Result<Self> {
-        track_assert!(
-            n <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large counter: {}",
-            n
-        );
+        if n > Self::MAX {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large counter: {}",
+                n
+            )));
+        }
         Ok(ContinuityCounter(n))
     }
 
@@ -139,12 +136,12 @@ impl VersionNumber {
     ///
     /// If `n` exceeds `VersionNumber::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn from_u8(n: u8) -> Result<Self> {
-        track_assert!(
-            n <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large version number: {}",
-            n
-        );
+        if n > Self::MAX {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large version number: {}",
+                n
+            )));
+        }
         Ok(VersionNumber(n))
     }
 
@@ -183,13 +180,13 @@ impl Bytes {
     /// If the length of `bytes` exceeds `Bytes::MAX_SIZE`,
     /// it will return an `ErrorKind::InvalidInput` error.
     pub fn new(bytes: &[u8]) -> Result<Self> {
-        track_assert!(
-            bytes.len() <= Self::MAX_SIZE,
-            ErrorKind::InvalidInput,
-            "Too large: actual={} bytes, max={} bytes",
-            bytes.len(),
-            Self::MAX_SIZE
-        );
+        if bytes.len() > Self::MAX_SIZE {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large: actual={} bytes, max={} bytes",
+                bytes.len(),
+                Self::MAX_SIZE
+            )));
+        }
 
         let len = bytes.len();
         let mut buf = [0; Self::MAX_SIZE];
@@ -201,7 +198,7 @@ impl Bytes {
         let mut offset = 0;
         let mut buf = [0; Self::MAX_SIZE];
         loop {
-            let read_size = track_io!(reader.read(&mut buf[offset..]))?;
+            let read_size = reader.read(&mut buf[offset..])?;
             if read_size == 0 {
                 break;
             }
@@ -211,7 +208,7 @@ impl Bytes {
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_all(self.as_ref()))?;
+        writer.write_all(self.as_ref())?;
         Ok(())
     }
 }
@@ -257,8 +254,13 @@ impl TransportScramblingControl {
             0b00 => TransportScramblingControl::NotScrambled,
             0b10 => TransportScramblingControl::ScrambledWithEvenKey,
             0b11 => TransportScramblingControl::ScrambledWithOddKey,
-            0b01 => track_panic!(ErrorKind::InvalidInput, "Reserved for future use"),
-            _ => track_panic!(ErrorKind::InvalidInput, "Unexpected value: {}", n),
+            0b01 => return Err(crate::Error::invalid_input("Reserved for future use")),
+            _ => {
+                return Err(crate::Error::invalid_input(format!(
+                    "Unexpected value: {}",
+                    n
+                )));
+            }
         })
     }
 }
@@ -280,12 +282,12 @@ impl LegalTimeWindow {
     ///
     /// If `offset` exceeds `LegalTimeWindow::MAX_OFFSET`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new(is_valid: bool, offset: u16) -> Result<Self> {
-        track_assert!(
-            offset <= Self::MAX_OFFSET,
-            ErrorKind::InvalidInput,
-            "Too large offset: {}",
-            offset
-        );
+        if offset > Self::MAX_OFFSET {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large offset: {}",
+                offset
+            )));
+        }
         Ok(LegalTimeWindow { is_valid, offset })
     }
 
@@ -300,7 +302,7 @@ impl LegalTimeWindow {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_u16())?;
+        let n = reader.read_u16()?;
         Ok(LegalTimeWindow {
             is_valid: (n & 0b1000_0000_0000_0000) != 0,
             offset: n & 0b0111_1111_1111_1111,
@@ -309,7 +311,7 @@ impl LegalTimeWindow {
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
         let n = ((self.is_valid as u16) << 15) | self.offset;
-        track_io!(writer.write_u16(n))?;
+        writer.write_u16(n)?;
         Ok(())
     }
 }
@@ -328,12 +330,12 @@ impl PiecewiseRate {
     ///
     /// If `rate` exceeds `PiecewiseRate::MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new(rate: u32) -> Result<Self> {
-        track_assert!(
-            rate <= Self::MAX,
-            ErrorKind::InvalidInput,
-            "Too large rate: {}",
-            rate
-        );
+        if rate > Self::MAX {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large rate: {}",
+                rate
+            )));
+        }
         Ok(PiecewiseRate(rate))
     }
 
@@ -343,12 +345,12 @@ impl PiecewiseRate {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<3>())? as u32;
+        let n = reader.read_uint::<3>()? as u32;
         Ok(PiecewiseRate(n & 0x3FFF_FFFF))
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_uint::<3>(u64::from(self.0)))?;
+        writer.write_uint::<3>(u64::from(self.0))?;
         Ok(())
     }
 }
@@ -371,12 +373,12 @@ impl SeamlessSplice {
     /// If `splice_type` exceeds `SeamlessSplice::MAX_SPLICE_TYPE`,
     /// it will return an `ErrorKind::InvalidInput` error.
     pub fn new(splice_type: u8, dts_next_access_unit: Timestamp) -> Result<Self> {
-        track_assert!(
-            splice_type <= Self::MAX_SPLICE_TYPE,
-            ErrorKind::InvalidInput,
-            "Too large splice type: {}",
-            splice_type
-        );
+        if splice_type > Self::MAX_SPLICE_TYPE {
+            return Err(crate::Error::invalid_input(format!(
+                "Too large splice type: {}",
+                splice_type
+            )));
+        }
         Ok(SeamlessSplice {
             splice_type,
             dts_next_access_unit,
@@ -394,18 +396,16 @@ impl SeamlessSplice {
     }
 
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let n = track_io!(reader.read_uint::<5>())?;
+        let n = reader.read_uint::<5>()?;
         Ok(SeamlessSplice {
             splice_type: (n >> 36) as u8,
-            dts_next_access_unit: track!(Timestamp::from_u64(n & 0x0F_FFFF_FFFF))?,
+            dts_next_access_unit: Timestamp::from_u64(n & 0x0F_FFFF_FFFF)?,
         })
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track!(
-            self.dts_next_access_unit
-                .write_to(&mut writer, self.splice_type)
-        )?;
+        self.dts_next_access_unit
+            .write_to(&mut writer, self.splice_type)?;
         Ok(())
     }
 }

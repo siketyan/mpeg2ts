@@ -7,7 +7,7 @@ use std::io::Read;
 pub struct Null;
 impl Null {
     pub(super) fn read_from<R: Read>(reader: R) -> Result<Self> {
-        let _ = track!(Bytes::read_from(reader))?;
+        let _ = Bytes::read_from(reader)?;
         Ok(Null)
     }
 }

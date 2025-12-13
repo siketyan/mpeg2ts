@@ -1,7 +1,7 @@
 use crate::es::StreamId;
 use crate::time::{ClockReference, Timestamp};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 const PACKET_START_CODE_PREFIX: u64 = 0x00_0001;
@@ -45,15 +45,16 @@ impl PesHeader {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
-        let packet_start_code_prefix = track_io!(reader.read_uint::<3>())?;
-        track_assert_eq!(
-            packet_start_code_prefix,
-            PACKET_START_CODE_PREFIX,
-            ErrorKind::InvalidInput
-        );
+        let packet_start_code_prefix = reader.read_uint::<3>()?;
+        if packet_start_code_prefix != PACKET_START_CODE_PREFIX {
+            return Err(Error::invalid_input(format!(
+                "Expected packet start code prefix 0x{:06x}, got 0x{:06x}",
+                PACKET_START_CODE_PREFIX, packet_start_code_prefix
+            )));
+        }
 
-        let stream_id = StreamId::new(track_io!(reader.read_u8())?);
-        let packet_len = track_io!(reader.read_u16())?;
+        let stream_id = StreamId::new(reader.read_u8()?);
+        let packet_len = reader.read_u16()?;
 
         if stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || stream_id.as_u8() == StreamId::PADDING_STREAM
@@ -77,24 +78,25 @@ impl PesHeader {
             return Ok((header, packet_len));
         }
 
-        let b = track_io!(reader.read_u8())?;
-        track_assert_eq!(
-            b & 0b1100_0000,
-            0b1000_0000,
-            ErrorKind::InvalidInput,
-            "Unexpected marker bits"
-        );
+        let b = reader.read_u8()?;
+        if (b & 0b1100_0000) != 0b1000_0000 {
+            return Err(Error::invalid_input("Unexpected marker bits"));
+        }
         let scrambling_control = (b & 0b0011_0000) >> 4;
         let priority = (b & 0b0000_1000) != 0;
         let data_alignment_indicator = (b & 0b0000_0100) != 0;
         let copyright = (b & 0b0000_0010) != 0;
         let original_or_copy = (b & 0b0000_0001) != 0;
-        track_assert_eq!(scrambling_control, 0, ErrorKind::Unsupported);
+        if scrambling_control != 0 {
+            return Err(Error::unsupported("Scrambling control is not supported"));
+        }
 
-        let b = track_io!(reader.read_u8())?;
+        let b = reader.read_u8()?;
         let pts_flag = (b & 0b1000_0000) != 0;
         let dts_flag = (b & 0b0100_0000) != 0;
-        track_assert_ne!((pts_flag, dts_flag), (false, true), ErrorKind::InvalidInput);
+        if !pts_flag && dts_flag {
+            return Err(Error::invalid_input("DTS cannot be present without PTS"));
+        }
 
         let escr_flag = (b & 0b0010_0000) != 0;
         let es_rate_flag = (b & 0b0001_0000) != 0;
@@ -102,33 +104,46 @@ impl PesHeader {
         let additional_copy_info_flag = (b & 0b0000_0100) != 0;
         let crc_flag = (b & 0b0000_0010) != 0;
         let extension_flag = (b & 0b0000_0001) != 0;
-        track_assert!(!es_rate_flag, ErrorKind::Unsupported);
-        track_assert!(!dsm_trick_mode_flag, ErrorKind::Unsupported);
-        track_assert!(!additional_copy_info_flag, ErrorKind::Unsupported);
-        track_assert!(!crc_flag, ErrorKind::Unsupported);
-        track_assert!(!extension_flag, ErrorKind::Unsupported);
 
-        let pes_header_len = track_io!(reader.read_u8())?;
+        if es_rate_flag {
+            return Err(Error::unsupported("ES rate flag is not supported"));
+        }
+        if dsm_trick_mode_flag {
+            return Err(Error::unsupported("DSM trick mode flag is not supported"));
+        }
+        if additional_copy_info_flag {
+            return Err(Error::unsupported(
+                "Additional copy info flag is not supported",
+            ));
+        }
+        if crc_flag {
+            return Err(Error::unsupported("CRC flag is not supported"));
+        }
+        if extension_flag {
+            return Err(Error::unsupported("Extension flag is not supported"));
+        }
+
+        let pes_header_len = reader.read_u8()?;
 
         let mut reader = reader.take(u64::from(pes_header_len));
         let pts = if pts_flag {
             let check_bits = if dts_flag { 3 } else { 2 };
-            Some(track!(Timestamp::read_from(&mut reader, check_bits))?)
+            Some(Timestamp::read_from(&mut reader, check_bits)?)
         } else {
             None
         };
         let dts = if dts_flag {
             let check_bits = 1;
-            Some(track!(Timestamp::read_from(&mut reader, check_bits))?)
+            Some(Timestamp::read_from(&mut reader, check_bits)?)
         } else {
             None
         };
         let escr = if escr_flag {
-            Some(track!(ClockReference::read_escr_from(&mut reader))?)
+            Some(ClockReference::read_escr_from(&mut reader)?)
         } else {
             None
         };
-        track!(crate::util::consume_stuffing_bytes(reader))?;
+        crate::util::consume_stuffing_bytes(reader)?;
 
         let header = PesHeader {
             stream_id,
@@ -144,9 +159,9 @@ impl PesHeader {
     }
 
     pub(crate) fn write_to<W: Write>(&self, mut writer: W, pes_header_len: u16) -> Result<()> {
-        track_io!(writer.write_uint::<3>(PACKET_START_CODE_PREFIX))?;
-        track_io!(writer.write_u8(self.stream_id.as_u8()))?;
-        track_io!(writer.write_u16(pes_header_len))?;
+        writer.write_uint::<3>(PACKET_START_CODE_PREFIX)?;
+        writer.write_u8(self.stream_id.as_u8())?;
+        writer.write_u16(pes_header_len)?;
 
         if self.stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || self.stream_id.as_u8() == StreamId::PADDING_STREAM
@@ -165,28 +180,28 @@ impl PesHeader {
             | ((self.data_alignment_indicator as u8) << 2)
             | ((self.copyright as u8) << 1)
             | self.original_or_copy as u8;
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
-        if self.dts.is_some() {
-            track_assert!(self.pts.is_some(), ErrorKind::InvalidInput);
+        if self.dts.is_some() && self.pts.is_none() {
+            return Err(Error::invalid_input("DTS cannot be present without PTS"));
         }
         let n = ((self.pts.is_some() as u8) << 7)
             | ((self.dts.is_some() as u8) << 6)
             | ((self.escr.is_some() as u8) << 5);
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         let pes_header_len = self.optional_header_len() as u8 - 3;
-        track_io!(writer.write_u8(pes_header_len))?;
+        writer.write_u8(pes_header_len)?;
         if let Some(x) = self.pts {
             let check_bits = if self.dts.is_some() { 3 } else { 2 };
-            track!(x.write_to(&mut writer, check_bits))?;
+            x.write_to(&mut writer, check_bits)?;
         }
         if let Some(x) = self.dts {
             let check_bits = 1;
-            track!(x.write_to(&mut writer, check_bits))?;
+            x.write_to(&mut writer, check_bits)?;
         }
         if let Some(x) = self.escr {
-            track!(x.write_escr_to(&mut writer))?;
+            x.write_escr_to(&mut writer)?;
         }
 
         Ok(())

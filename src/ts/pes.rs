@@ -13,8 +13,8 @@ pub struct Pes {
 }
 impl Pes {
     pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let (header, pes_packet_len) = track!(PesHeader::read_from(&mut reader))?;
-        let data = track!(Bytes::read_from(reader))?;
+        let (header, pes_packet_len) = PesHeader::read_from(&mut reader)?;
+        let data = Bytes::read_from(reader)?;
         Ok(Pes {
             header,
             pes_packet_len,
@@ -23,8 +23,8 @@ impl Pes {
     }
 
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track!(self.header.write_to(&mut writer, self.pes_packet_len))?;
-        track!(self.data.write_to(writer))?;
+        self.header.write_to(&mut writer, self.pes_packet_len)?;
+        self.data.write_to(writer)?;
         Ok(())
     }
 }

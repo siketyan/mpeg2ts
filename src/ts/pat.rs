@@ -1,7 +1,7 @@
 use crate::ts::psi::{Psi, PsiTable, PsiTableHeader, PsiTableSyntax};
 use crate::ts::{Pid, VersionNumber};
 use crate::util::{ReadBytesExt, WriteBytesExt};
-use crate::{ErrorKind, Result};
+use crate::{Error, Result};
 use std::io::{Read, Write};
 
 /// Payload for PAT(Program Association Table) packets.
@@ -16,23 +16,44 @@ impl Pat {
     const TABLE_ID: u8 = 0;
 
     pub(super) fn read_from<R: Read>(reader: R) -> Result<Self> {
-        let mut psi = track!(Psi::read_from(reader))?;
-        track_assert_eq!(psi.tables.len(), 1, ErrorKind::InvalidInput);
+        let mut psi = Psi::read_from(reader)?;
+        if psi.tables.len() != 1 {
+            return Err(Error::invalid_input("Expected exactly one PSI table"));
+        }
 
         let table = psi.tables.pop().expect("Never fails");
         let header = table.header;
-        track_assert_eq!(header.table_id, Self::TABLE_ID, ErrorKind::InvalidInput);
-        track_assert!(!header.private_bit, ErrorKind::InvalidInput);
+        if header.table_id != Self::TABLE_ID {
+            return Err(Error::invalid_input(format!(
+                "Expected table_id {}, got {}",
+                Self::TABLE_ID,
+                header.table_id
+            )));
+        }
+        if header.private_bit {
+            return Err(Error::invalid_input("Unexpected private_bit"));
+        }
 
-        let syntax = track_assert_some!(table.syntax.as_ref(), ErrorKind::InvalidInput);
-        track_assert_eq!(syntax.section_number, 0, ErrorKind::InvalidInput);
-        track_assert_eq!(syntax.last_section_number, 0, ErrorKind::InvalidInput);
-        track_assert!(syntax.current_next_indicator, ErrorKind::InvalidInput);
+        let syntax = table
+            .syntax
+            .as_ref()
+            .ok_or_else(|| Error::invalid_input("Expected table syntax"))?;
+        if syntax.section_number != 0 {
+            return Err(Error::invalid_input("Expected section_number 0"));
+        }
+        if syntax.last_section_number != 0 {
+            return Err(Error::invalid_input("Expected last_section_number 0"));
+        }
+        if !syntax.current_next_indicator {
+            return Err(Error::invalid_input(
+                "Expected current_next_indicator to be true",
+            ));
+        }
 
         let mut reader = &syntax.table_data[..];
         let mut table = Vec::new();
         while !reader.is_empty() {
-            table.push(track!(ProgramAssociation::read_from(&mut reader))?);
+            table.push(ProgramAssociation::read_from(&mut reader)?);
         }
         Ok(Pat {
             transport_stream_id: syntax.table_id_extension,
@@ -42,13 +63,13 @@ impl Pat {
     }
 
     pub(super) fn write_to<W: Write>(&self, writer: W) -> Result<()> {
-        track!(self.to_psi().and_then(|psi| psi.write_to(writer)))
+        self.to_psi()?.write_to(writer)
     }
 
     fn to_psi(&self) -> Result<Psi> {
         let mut table_data = Vec::new();
         for pa in &self.table {
-            track!(pa.write_to(&mut table_data))?;
+            pa.write_to(&mut table_data)?;
         }
 
         let header = PsiTableHeader {
@@ -79,8 +100,8 @@ pub struct ProgramAssociation {
 }
 impl ProgramAssociation {
     fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let program_num = track_io!(reader.read_u16())?;
-        let program_map_pid = track!(Pid::read_from(reader))?;
+        let program_num = reader.read_u16()?;
+        let program_map_pid = Pid::read_from(reader)?;
         Ok(ProgramAssociation {
             program_num,
             program_map_pid,
@@ -88,8 +109,8 @@ impl ProgramAssociation {
     }
 
     fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_u16(self.program_num))?;
-        track!(self.program_map_pid.write_to(writer))?;
+        writer.write_u16(self.program_num)?;
+        self.program_map_pid.write_to(writer)?;
         Ok(())
     }
 }

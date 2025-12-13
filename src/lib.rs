@@ -13,19 +13,8 @@
 //! - [Program-specific information](https://en.wikipedia.org/wiki/Program-specific_information)
 //! - [Packetized elementary stream](https://en.wikipedia.org/wiki/Packetized_elementary_stream)
 #![warn(missing_docs)]
-#[macro_use]
-extern crate trackable;
 
 pub use error::{Error, ErrorKind};
-
-macro_rules! track_io {
-    ($expr:expr) => {
-        $expr.map_err(|e: ::std::io::Error| {
-            use trackable::error::ErrorKindExt;
-            track!(crate::Error::from(crate::ErrorKind::Other.cause(e)))
-        })
-    };
-}
 
 pub mod es;
 pub mod pes;

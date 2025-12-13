@@ -13,8 +13,8 @@ pub struct Section {
 
 impl Section {
     pub(super) fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_u8(self.pointer_field))?;
-        track!(self.data.write_to(writer))?;
+        writer.write_u8(self.pointer_field)?;
+        self.data.write_to(writer)?;
         Ok(())
     }
 }
