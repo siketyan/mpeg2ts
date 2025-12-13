@@ -11,7 +11,6 @@ fn main() -> noargs::Result<()> {
     noargs::HELP_FLAG.take_help(&mut args);
 
     let output_type: String = noargs::opt("output_type")
-        .short('t')
         .default("ts-packet")
         .take(&mut args)
         .then(|o| o.value().parse())?;
@@ -67,7 +66,11 @@ fn main() -> noargs::Result<()> {
                 );
             }
         }
-        _ => unreachable!(),
+        _ => {
+            eprintln!("Error: Invalid output type '{}'", output_type);
+            eprintln!("Valid options are: ts, ts-packet, pes-packet, es-audio, es-video");
+            std::process::exit(1);
+        }
     }
 
     Ok(())
