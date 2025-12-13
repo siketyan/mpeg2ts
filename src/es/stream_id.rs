@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Result};
+use crate::{Error, Result};
 
 /// Stream identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -87,12 +87,9 @@ impl StreamId {
     ///
     /// If `id` is not between `AUDIO_MIN` and `AUDIO_MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new_audio(id: u8) -> Result<Self> {
-        track_assert!(
-            (Self::AUDIO_MIN..=Self::AUDIO_MAX).contains(&id),
-            ErrorKind::InvalidInput,
-            "Not an audio ID: {}",
-            id
-        );
+        if !((Self::AUDIO_MIN..=Self::AUDIO_MAX).contains(&id)) {
+            return Err(Error::invalid_input(format!("Not an audio ID: {}", id)));
+        }
         Ok(StreamId(id))
     }
 
@@ -102,12 +99,9 @@ impl StreamId {
     ///
     /// If `id` is not between `VIDEO_MIN` and `VIDEO_MAX`, it will return an `ErrorKind::InvalidInput` error.
     pub fn new_video(id: u8) -> Result<Self> {
-        track_assert!(
-            (Self::VIDEO_MIN..=Self::VIDEO_MAX).contains(&id),
-            ErrorKind::InvalidInput,
-            "Not a video ID: {}",
-            id
-        );
+        if !((Self::VIDEO_MIN..=Self::VIDEO_MAX).contains(&id)) {
+            return Err(Error::invalid_input(format!("Not a video ID: {}", id)));
+        }
         Ok(StreamId(id))
     }
 

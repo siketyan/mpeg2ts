@@ -41,16 +41,16 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
     fn read_ts_packet(&mut self) -> Result<Option<TsPacket>> {
         let mut reader = self.stream.by_ref().take(TsPacket::SIZE as u64);
         let mut peek = [0; 1];
-        let eos = track_io!(reader.read(&mut peek))? == 0;
+        let eos = reader.read(&mut peek)? == 0;
         if eos {
             return Ok(None);
         }
 
         let (header, adaptation_field_control, payload_unit_start_indicator) =
-            track!(TsHeader::read_from(peek.chain(&mut reader)))?;
+            TsHeader::read_from(peek.chain(&mut reader))?;
 
         let adaptation_field = if adaptation_field_control.has_adaptation_field() {
-            track!(AdaptationField::read_from(&mut reader))?
+            AdaptationField::read_from(&mut reader)?
         } else {
             None
         };
@@ -58,31 +58,28 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
         let payload = if adaptation_field_control.has_payload() {
             let payload = match header.pid.as_u16() {
                 Pid::PAT => {
-                    let pat = track!(Pat::read_from(&mut reader))?;
+                    let pat = Pat::read_from(&mut reader)?;
                     for pa in &pat.table {
                         self.pids.insert(pa.program_map_pid, PidKind::Pmt);
                     }
                     TsPayload::Pat(pat)
                 }
                 Pid::NULL => {
-                    let null = track!(Null::read_from(&mut reader))?;
+                    let null = Null::read_from(&mut reader)?;
                     TsPayload::Null(null)
                 }
                 0x01..=0x1F | 0x1FFB => {
                     // Unknown (unsupported) packets
-                    let bytes = track!(Bytes::read_from(&mut reader))?;
+                    let bytes = Bytes::read_from(&mut reader)?;
                     TsPayload::Raw(bytes)
                 }
                 _ => {
-                    let kind = track_assert_some!(
-                        self.pids.get(&header.pid).cloned(),
-                        ErrorKind::InvalidInput,
-                        "Unknown PID: header={:?}",
-                        header
-                    );
+                    let kind = self.pids.get(&header.pid).cloned().ok_or_else(|| {
+                        crate::Error::invalid_input(format!("Unknown PID: header={:?}", header))
+                    })?;
                     match kind {
                         PidKind::Pmt => {
-                            let pmt = track!(Pmt::read_from(&mut reader))?;
+                            let pmt = Pmt::read_from(&mut reader)?;
                             for es in &pmt.es_info {
                                 self.pids.insert(es.elementary_pid, PidKind::Pes);
                             }
@@ -90,10 +87,10 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                         }
                         PidKind::Pes => {
                             if payload_unit_start_indicator {
-                                let pes = track!(Pes::read_from(&mut reader))?;
+                                let pes = Pes::read_from(&mut reader)?;
                                 TsPayload::Pes(pes)
                             } else {
-                                let bytes = track!(Bytes::read_from(&mut reader))?;
+                                let bytes = Bytes::read_from(&mut reader)?;
                                 TsPayload::Raw(bytes)
                             }
                         }
@@ -105,7 +102,11 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
             None
         };
 
-        track_assert_eq!(reader.limit(), 0, ErrorKind::InvalidInput);
+        if reader.limit() != 0 {
+            return Err(crate::Error::invalid_input(
+                "Unexpected remaining data in TS packet",
+            ));
+        }
         Ok(Some(TsPacket {
             header,
             adaptation_field,

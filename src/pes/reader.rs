@@ -1,7 +1,7 @@
 use crate::pes::PesPacket;
 use crate::ts::payload::{Bytes, Pes};
 use crate::ts::{Pid, ReadTsPacket, TsPayload};
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::collections::HashMap;
 
 /// The `ReadPesPacket` trait allows for reading PES packets from a source.
@@ -42,11 +42,9 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
     fn handle_eos(&mut self) -> Result<Option<PesPacket<Vec<u8>>>> {
         if let Some(key) = self.pes_packets.keys().next().cloned() {
             let partial = self.pes_packets.remove(&key).expect("Never fails");
-            track_assert!(
-                partial.data_len.is_none() || partial.data_len == Some(partial.packet.data.len()),
-                ErrorKind::InvalidInput,
-                "Unexpected EOS"
-            );
+            if partial.data_len.is_some() && partial.data_len != Some(partial.packet.data.len()) {
+                return Err(Error::invalid_input("Unexpected EOS"));
+            }
             Ok(Some(partial.packet))
         } else {
             Ok(None)
@@ -58,13 +56,12 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
             None
         } else {
             let optional_header_len = pes.header.optional_header_len();
-            track_assert!(
-                pes.pes_packet_len >= optional_header_len,
-                ErrorKind::InvalidInput,
-                "pes.pes_packet_len={}, optional_header_len={}",
-                pes.pes_packet_len,
-                optional_header_len
-            );
+            if pes.pes_packet_len < optional_header_len {
+                return Err(Error::invalid_input(format!(
+                    "pes.pes_packet_len={}, optional_header_len={}",
+                    pes.pes_packet_len, optional_header_len
+                )));
+            }
             Some((pes.pes_packet_len - optional_header_len) as usize)
         };
 
@@ -77,13 +74,13 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
         };
         let partial = PartialPesPacket { packet, data_len };
         if let Some(pred) = self.pes_packets.insert(pid, partial) {
-            track_assert!(
-                pred.data_len.is_none() || pred.data_len == Some(pred.packet.data.len()),
-                ErrorKind::InvalidInput,
-                "Mismatched PES packet data length: actual={}, expected={}",
-                pred.data_len.expect("Never fails"),
-                pred.packet.data.len()
-            );
+            if pred.data_len.is_some() && pred.data_len != Some(pred.packet.data.len()) {
+                return Err(Error::invalid_input(format!(
+                    "Mismatched PES packet data length: actual={}, expected={}",
+                    pred.packet.data.len(),
+                    pred.data_len.expect("Never fails")
+                )));
+            }
             Ok(Some(pred.packet))
         } else {
             Ok(None)
@@ -91,20 +88,22 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
     }
 
     fn handle_raw_payload(&mut self, pid: Pid, data: &Bytes) -> Result<Option<PesPacket<Vec<u8>>>> {
-        let mut partial =
-            track_assert_some!(self.pes_packets.remove(&pid), ErrorKind::InvalidInput);
+        let mut partial = self
+            .pes_packets
+            .remove(&pid)
+            .ok_or_else(|| Error::invalid_input("PES packet not found for PID"))?;
         partial.packet.data.extend_from_slice(data);
         if Some(partial.packet.data.len()) == partial.data_len {
             Ok(Some(partial.packet))
         } else {
             if let Some(expected) = partial.data_len {
-                track_assert!(
-                    partial.packet.data.len() <= expected,
-                    ErrorKind::InvalidInput,
-                    "Too large PES packet data: actual={}, expected={}",
-                    partial.packet.data.len(),
-                    expected
-                );
+                if partial.packet.data.len() > expected {
+                    return Err(Error::invalid_input(format!(
+                        "Too large PES packet data: actual={}, expected={}",
+                        partial.packet.data.len(),
+                        expected
+                    )));
+                }
             }
             self.pes_packets.insert(pid, partial);
             Ok(None)
@@ -114,14 +113,14 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
 impl<R: ReadTsPacket> ReadPesPacket for PesPacketReader<R> {
     fn read_pes_packet(&mut self) -> Result<Option<PesPacket<Vec<u8>>>> {
         if self.eos {
-            return track!(self.handle_eos());
+            return self.handle_eos();
         }
 
-        while let Some(ts_packet) = track!(self.ts_packet_reader.read_ts_packet())? {
+        while let Some(ts_packet) = self.ts_packet_reader.read_ts_packet()? {
             let pid = ts_packet.header.pid;
             let result = match ts_packet.payload {
-                Some(TsPayload::Pes(payload)) => track!(self.handle_pes_payload(pid, payload))?,
-                Some(TsPayload::Raw(payload)) => track!(self.handle_raw_payload(pid, &payload))?,
+                Some(TsPayload::Pes(payload)) => self.handle_pes_payload(pid, payload)?,
+                Some(TsPayload::Raw(payload)) => self.handle_raw_payload(pid, &payload)?,
                 _ => None,
             };
             if result.is_some() {
@@ -130,7 +129,7 @@ impl<R: ReadTsPacket> ReadPesPacket for PesPacketReader<R> {
         }
 
         self.eos = true;
-        track!(self.handle_eos())
+        self.handle_eos()
     }
 }
 

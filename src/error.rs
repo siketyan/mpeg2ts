@@ -35,8 +35,8 @@ impl Error {
         Self {
             kind,
             reason: reason.into(),
-            location: Location::caller(),
-            backtrace: Backtrace::capture(),
+            location: std::panic::Location::caller(),
+            backtrace: std::backtrace::Backtrace::capture(),
             io_error: None,
         }
     }
