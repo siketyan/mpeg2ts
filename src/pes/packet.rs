@@ -46,7 +46,12 @@ impl PesHeader {
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
         let packet_start_code_prefix = reader.read_uint::<3>()?;
-        assert_eq!(packet_start_code_prefix, PACKET_START_CODE_PREFIX,);
+        if packet_start_code_prefix != PACKET_START_CODE_PREFIX {
+            return Err(Error::invalid_input(format!(
+                "Expected packet start code prefix 0x{:06x}, got 0x{:06x}",
+                PACKET_START_CODE_PREFIX, packet_start_code_prefix
+            )));
+        }
 
         let stream_id = StreamId::new(reader.read_u8()?);
         let packet_len = reader.read_u16()?;
@@ -74,18 +79,24 @@ impl PesHeader {
         }
 
         let b = reader.read_u8()?;
-        assert_eq!(b & 0b1100_0000, 0b1000_0000);
+        if (b & 0b1100_0000) != 0b1000_0000 {
+            return Err(Error::invalid_input("Unexpected marker bits"));
+        }
         let scrambling_control = (b & 0b0011_0000) >> 4;
         let priority = (b & 0b0000_1000) != 0;
         let data_alignment_indicator = (b & 0b0000_0100) != 0;
         let copyright = (b & 0b0000_0010) != 0;
         let original_or_copy = (b & 0b0000_0001) != 0;
-        assert_eq!(scrambling_control, 0);
+        if scrambling_control != 0 {
+            return Err(Error::unsupported("Scrambling control is not supported"));
+        }
 
         let b = reader.read_u8()?;
         let pts_flag = (b & 0b1000_0000) != 0;
         let dts_flag = (b & 0b0100_0000) != 0;
-        assert_ne!((pts_flag, dts_flag), (false, true));
+        if !pts_flag && dts_flag {
+            return Err(Error::invalid_input("DTS cannot be present without PTS"));
+        }
 
         let escr_flag = (b & 0b0010_0000) != 0;
         let es_rate_flag = (b & 0b0001_0000) != 0;
@@ -93,11 +104,24 @@ impl PesHeader {
         let additional_copy_info_flag = (b & 0b0000_0100) != 0;
         let crc_flag = (b & 0b0000_0010) != 0;
         let extension_flag = (b & 0b0000_0001) != 0;
-        assert!(!es_rate_flag);
-        assert!(!dsm_trick_mode_flag);
-        assert!(!additional_copy_info_flag);
-        assert!(!crc_flag);
-        assert!(!extension_flag);
+
+        if es_rate_flag {
+            return Err(Error::unsupported("ES rate flag is not supported"));
+        }
+        if dsm_trick_mode_flag {
+            return Err(Error::unsupported("DSM trick mode flag is not supported"));
+        }
+        if additional_copy_info_flag {
+            return Err(Error::unsupported(
+                "Additional copy info flag is not supported",
+            ));
+        }
+        if crc_flag {
+            return Err(Error::unsupported("CRC flag is not supported"));
+        }
+        if extension_flag {
+            return Err(Error::unsupported("Extension flag is not supported"));
+        }
 
         let pes_header_len = reader.read_u8()?;
 

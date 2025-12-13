@@ -31,6 +31,6 @@ impl<W: Write> TsPacketWriter<W> {
 }
 impl<W: Write> WriteTsPacket for TsPacketWriter<W> {
     fn write_ts_packet(&mut self, packet: &TsPacket) -> Result<()> {
-        track!(packet.write_to(&mut self.stream))
+        packet.write_to(&mut self.stream)
     }
 }

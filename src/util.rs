@@ -1,19 +1,23 @@
 use crate::crc::Crc32;
 use crate::ts::TsPacket;
-use crate::{ErrorKind, Result};
+use crate::{Error, ErrorKind, Result};
 use std::io::{self, Read, Write};
 
+#[track_caller]
 pub fn consume_stuffing_bytes<R: Read>(mut reader: R) -> Result<()> {
     let mut buf = [0];
-    while 1 == track_io!(reader.read(&mut buf))? {
-        track_assert_eq!(buf[0], 0xFF, ErrorKind::InvalidInput);
+    while 1 == reader.read(&mut buf)? {
+        if buf[0] != 0xFF {
+            return Err(Error::invalid_input("Expected stuffing byte 0xFF"));
+        }
     }
     Ok(())
 }
 
+#[track_caller]
 pub fn write_stuffing_bytes<W: Write>(mut writer: W, size: usize) -> Result<()> {
     let buf = [0xFF; TsPacket::SIZE];
-    track_io!(writer.write_all(&buf[..size]))?;
+    writer.write_all(&buf[..size])?;
     Ok(())
 }
 
