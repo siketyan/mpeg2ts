@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Result};
+use crate::{Error, Result};
 
 /// Elementary stream type.
 #[allow(missing_docs)]
@@ -101,7 +101,7 @@ impl StreamType {
             0xD1 => StreamType::UltraHdVideo,
             0xDB => StreamType::H264WithAes128Cbc,
             0xEA => StreamType::MicrosoftWindowsMediaVideo9,
-            _ => track_panic!(ErrorKind::InvalidInput, "Unknown stream type: {}", n),
+            _ => Error::invalid_input(format!("Unknown stream type: {n}")),
         })
     }
 }

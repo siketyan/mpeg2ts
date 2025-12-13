@@ -45,15 +45,15 @@ impl PesHeader {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
-        let packet_start_code_prefix = track_io!(reader.read_uint::<3>())?;
+        let packet_start_code_prefix = reader.read_uint::<3>()?;
         track_assert_eq!(
             packet_start_code_prefix,
             PACKET_START_CODE_PREFIX,
             ErrorKind::InvalidInput
         );
 
-        let stream_id = StreamId::new(track_io!(reader.read_u8())?);
-        let packet_len = track_io!(reader.read_u16())?;
+        let stream_id = StreamId::new(reader.read_u8()?);
+        let packet_len = reader.read_u16()?;
 
         if stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || stream_id.as_u8() == StreamId::PADDING_STREAM
@@ -77,7 +77,7 @@ impl PesHeader {
             return Ok((header, packet_len));
         }
 
-        let b = track_io!(reader.read_u8())?;
+        let b = reader.read_u8()?;
         track_assert_eq!(
             b & 0b1100_0000,
             0b1000_0000,
@@ -91,7 +91,7 @@ impl PesHeader {
         let original_or_copy = (b & 0b0000_0001) != 0;
         track_assert_eq!(scrambling_control, 0, ErrorKind::Unsupported);
 
-        let b = track_io!(reader.read_u8())?;
+        let b = reader.read_u8()?;
         let pts_flag = (b & 0b1000_0000) != 0;
         let dts_flag = (b & 0b0100_0000) != 0;
         track_assert_ne!((pts_flag, dts_flag), (false, true), ErrorKind::InvalidInput);
@@ -108,7 +108,7 @@ impl PesHeader {
         track_assert!(!crc_flag, ErrorKind::Unsupported);
         track_assert!(!extension_flag, ErrorKind::Unsupported);
 
-        let pes_header_len = track_io!(reader.read_u8())?;
+        let pes_header_len = reader.read_u8()?;
 
         let mut reader = reader.take(u64::from(pes_header_len));
         let pts = if pts_flag {
@@ -144,9 +144,9 @@ impl PesHeader {
     }
 
     pub(crate) fn write_to<W: Write>(&self, mut writer: W, pes_header_len: u16) -> Result<()> {
-        track_io!(writer.write_uint::<3>(PACKET_START_CODE_PREFIX))?;
-        track_io!(writer.write_u8(self.stream_id.as_u8()))?;
-        track_io!(writer.write_u16(pes_header_len))?;
+        writer.write_uint::<3>(PACKET_START_CODE_PREFIX)?;
+        writer.write_u8(self.stream_id.as_u8())?;
+        writer.write_u16(pes_header_len)?;
 
         if self.stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || self.stream_id.as_u8() == StreamId::PADDING_STREAM
@@ -165,7 +165,7 @@ impl PesHeader {
             | ((self.data_alignment_indicator as u8) << 2)
             | ((self.copyright as u8) << 1)
             | self.original_or_copy as u8;
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         if self.dts.is_some() {
             track_assert!(self.pts.is_some(), ErrorKind::InvalidInput);
@@ -173,10 +173,10 @@ impl PesHeader {
         let n = ((self.pts.is_some() as u8) << 7)
             | ((self.dts.is_some() as u8) << 6)
             | ((self.escr.is_some() as u8) << 5);
-        track_io!(writer.write_u8(n))?;
+        writer.write_u8(n)?;
 
         let pes_header_len = self.optional_header_len() as u8 - 3;
-        track_io!(writer.write_u8(pes_header_len))?;
+        writer.write_u8(pes_header_len)?;
         if let Some(x) = self.pts {
             let check_bits = if self.dts.is_some() { 3 } else { 2 };
             track!(x.write_to(&mut writer, check_bits))?;

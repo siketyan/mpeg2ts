@@ -29,6 +29,24 @@ pub struct Error {
     pub io_error: Option<std::io::Error>,
 }
 
+impl Error {
+    #[track_caller]
+    pub fn new<T: Into<String>>(kind: ErrorKind, reason: T) -> Self {
+        Self {
+            kind,
+            reason: reason.into(),
+            location: Location::caller(),
+            backtrace: Backtrace::capture(),
+            io_error: None,
+        }
+    }
+
+    #[track_caller]
+    pub(crate) fn invalid_input<T: Into<String>>(reason: T) -> Self {
+        Self::with_reason(ErrorKind::InvalidInput, reason)
+    }
+}
+
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
