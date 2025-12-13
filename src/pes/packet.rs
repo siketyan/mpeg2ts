@@ -1,8 +1,7 @@
 use crate::es::StreamId;
 use crate::time::{ClockReference, Timestamp};
-use crate::util;
+use crate::util::{ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 const PACKET_START_CODE_PREFIX: u64 = 0x00_0001;
@@ -46,7 +45,7 @@ impl PesHeader {
     }
 
     pub(crate) fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
-        let packet_start_code_prefix = track_io!(reader.read_uint::<BigEndian>(3))?;
+        let packet_start_code_prefix = track_io!(reader.read_uint::<3>())?;
         track_assert_eq!(
             packet_start_code_prefix,
             PACKET_START_CODE_PREFIX,
@@ -54,7 +53,7 @@ impl PesHeader {
         );
 
         let stream_id = StreamId::new(track_io!(reader.read_u8())?);
-        let packet_len = track_io!(reader.read_u16::<BigEndian>())?;
+        let packet_len = track_io!(reader.read_u16())?;
 
         if stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || stream_id.as_u8() == StreamId::PADDING_STREAM
@@ -129,7 +128,7 @@ impl PesHeader {
         } else {
             None
         };
-        track!(util::consume_stuffing_bytes(reader))?;
+        track!(crate::util::consume_stuffing_bytes(reader))?;
 
         let header = PesHeader {
             stream_id,
@@ -145,9 +144,9 @@ impl PesHeader {
     }
 
     pub(crate) fn write_to<W: Write>(&self, mut writer: W, pes_header_len: u16) -> Result<()> {
-        track_io!(writer.write_uint::<BigEndian>(PACKET_START_CODE_PREFIX, 3))?;
+        track_io!(writer.write_uint::<3>(PACKET_START_CODE_PREFIX))?;
         track_io!(writer.write_u8(self.stream_id.as_u8()))?;
-        track_io!(writer.write_u16::<BigEndian>(pes_header_len))?;
+        track_io!(writer.write_u16(pes_header_len))?;
 
         if self.stream_id.as_u8() == StreamId::PROGRAM_STREAM_MAP
             || self.stream_id.as_u8() == StreamId::PADDING_STREAM

@@ -11,7 +11,6 @@ license = "MIT"
 edition = "2024"
 
 [dependencies]
-byteorder = "1"
 trackable = "1"
 
 [dev-dependencies]

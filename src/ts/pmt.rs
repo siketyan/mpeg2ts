@@ -1,8 +1,8 @@
 use crate::es::StreamType;
 use crate::ts::psi::{Psi, PsiTable, PsiTableHeader, PsiTableSyntax};
 use crate::ts::{Pid, VersionNumber};
+use crate::util::{ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 /// Program Map Table.
@@ -47,7 +47,7 @@ impl Pmt {
             Some(pcr_pid)
         };
 
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         track_assert_eq!(
             n & 0b1111_0000_0000_0000,
             0b1111_0000_0000_0000,
@@ -90,7 +90,7 @@ impl Pmt {
             track_assert_ne!(pid.as_u16(), 0b0001_1111_1111_1111, ErrorKind::InvalidInput);
             track!(pid.write_to(&mut table_data))?;
         } else {
-            track_io!(table_data.write_u16::<BigEndian>(0xFFFF))?;
+            track_io!(table_data.write_u16(0xFFFF))?;
         }
 
         let program_info_len: usize = self
@@ -104,7 +104,7 @@ impl Pmt {
             "program info length too large"
         );
         let n = 0b1111_0000_0000_0000 | program_info_len as u16;
-        track_io!(table_data.write_u16::<BigEndian>(n))?;
+        track_io!(table_data.write_u16(n))?;
 
         for desc in &self.program_info {
             track!(desc.write_to(&mut table_data))?;
@@ -147,7 +147,7 @@ impl EsInfo {
         let stream_type = track_io!(reader.read_u8()).and_then(StreamType::from_u8)?;
         let elementary_pid = track!(Pid::read_from(&mut reader))?;
 
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         track_assert_eq!(
             n & 0b1111_0000_0000_0000,
             0b1111_0000_0000_0000,
@@ -185,7 +185,7 @@ impl EsInfo {
         track_assert!(es_info_len <= 0b0011_1111_1111, ErrorKind::InvalidInput);
 
         let n = 0b1111_0000_0000_0000 | es_info_len as u16;
-        track_io!(writer.write_u16::<BigEndian>(n))?;
+        track_io!(writer.write_u16(n))?;
 
         for d in &self.descriptors {
             track!(d.write_to(&mut writer))?;

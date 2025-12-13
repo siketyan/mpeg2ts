@@ -1,8 +1,7 @@
 use crate::time::ClockReference;
 use crate::ts::{LegalTimeWindow, PiecewiseRate, SeamlessSplice};
-use crate::util;
+use crate::util::{self, ReadBytesExt, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 /// Adaptation field.

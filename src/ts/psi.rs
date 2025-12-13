@@ -1,7 +1,6 @@
 use crate::ts::VersionNumber;
-use crate::util::{self, WithCrc32};
+use crate::util::{self, ReadBytesExt, WithCrc32, WriteBytesExt};
 use crate::{ErrorKind, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 const MAX_SYNTAX_SECTION_LEN: usize = 1021;
@@ -58,7 +57,7 @@ impl PsiTable {
                 track!(PsiTableSyntax::read_from(reader))?
             };
             let crc32 = reader.crc32();
-            let expected_crc32 = track_io!(reader.read_u32::<BigEndian>())?;
+            let expected_crc32 = track_io!(reader.read_u32())?;
             track_assert_eq!(crc32, expected_crc32, ErrorKind::InvalidInput);
             Some(syntax)
         } else {
@@ -76,7 +75,7 @@ impl PsiTable {
             track!(x.write_to(&mut writer))?;
 
             let crc32 = writer.crc32();
-            track_io!(writer.write_u32::<BigEndian>(crc32))?;
+            track_io!(writer.write_u32(crc32))?;
         }
         Ok(())
     }
@@ -91,7 +90,7 @@ impl PsiTableHeader {
     fn read_from<R: Read>(mut reader: R) -> Result<(Self, u16)> {
         let table_id = track_io!(reader.read_u8())?;
 
-        let n = track_io!(reader.read_u16::<BigEndian>())?;
+        let n = track_io!(reader.read_u16())?;
         let syntax_section_indicator = (n & 0b1000_0000_0000_0000) != 0;
         let private_bit = (n & 0b0100_0000_0000_0000) != 0;
         track_assert_eq!(
@@ -134,7 +133,7 @@ impl PsiTableHeader {
             | ((self.private_bit as u16) << 14)
             | 0b0011_0000_0000_0000
             | syntax_section_len as u16;
-        track_io!(writer.write_u16::<BigEndian>(n))?;
+        track_io!(writer.write_u16(n))?;
 
         Ok(())
     }
@@ -160,7 +159,7 @@ impl PsiTableSyntax {
     }
 
     fn read_from<R: Read>(mut reader: R) -> Result<Self> {
-        let table_id_extension = track_io!(reader.read_u16::<BigEndian>())?;
+        let table_id_extension = track_io!(reader.read_u16())?;
 
         let b = track_io!(reader.read_u8())?;
         track_assert_eq!(
@@ -189,7 +188,7 @@ impl PsiTableSyntax {
     }
 
     fn write_to<W: Write>(&self, mut writer: W) -> Result<()> {
-        track_io!(writer.write_u16::<BigEndian>(self.table_id_extension))?;
+        track_io!(writer.write_u16(self.table_id_extension))?;
 
         let n =
             0b1100_0000 | (self.version_number.as_u8() << 1) | self.current_next_indicator as u8;
