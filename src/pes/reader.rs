@@ -96,15 +96,14 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
         if Some(partial.packet.data.len()) == partial.data_len {
             Ok(Some(partial.packet))
         } else {
-            if let Some(expected) = partial.data_len {
-                if partial.packet.data.len() > expected {
+            if let Some(expected) = partial.data_len
+                && partial.packet.data.len() > expected {
                     return Err(Error::invalid_input(format!(
                         "Too large PES packet data: actual={}, expected={}",
                         partial.packet.data.len(),
                         expected
                     )));
                 }
-            }
             self.pes_packets.insert(pid, partial);
             Ok(None)
         }
