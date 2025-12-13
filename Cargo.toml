@@ -11,7 +11,6 @@ license = "MIT"
 edition = "2024"
 
 [dependencies]
-trackable = "1"
 
 [dev-dependencies]
 noargs = "0.4.1"
