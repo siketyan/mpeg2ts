@@ -1,27 +1,26 @@
 #[macro_use]
 extern crate trackable;
 
-use clap::Parser;
 use mpeg2ts::pes::{PesPacketReader, ReadPesPacket};
 use mpeg2ts::ts::{ReadTsPacket, TsPacketReader, TsPacketWriter, WriteTsPacket};
 use std::io::Write;
 use trackable::error::Failure;
 
-#[derive(Debug, Parser)]
-struct Args {
-    #[arg(
-        long,
-        default_value="ts-packet",
-        value_parser = clap::builder::PossibleValuesParser::new(
-            ["ts", "ts-packet", "pes-packet", "es-audio", "es-video"]
-        )
-    )]
-    output_type: String,
-}
+fn main() -> noargs::Result<()> {
+    let mut args = noargs::raw_args();
+    noargs::HELP_FLAG.take_help(&mut args);
 
-fn main() {
-    let args = Args::parse();
-    match args.output_type.as_str() {
+    let output_type: String = noargs::opt("output_type")
+        .default("ts-packet")
+        .take(&mut args)
+        .then(|o| o.value().parse())?;
+
+    if let Some(help) = args.finish()? {
+        print!("{help}");
+        return Ok(());
+    }
+
+    match output_type.as_str() {
         "ts" => {
             let mut writer = TsPacketWriter::new(std::io::stdout());
             let mut reader = TsPacketReader::new(std::io::stdin());
@@ -67,6 +66,12 @@ fn main() {
                 );
             }
         }
-        _ => unreachable!(),
+        _ => {
+            eprintln!("Error: Invalid output type '{}'", output_type);
+            eprintln!("Valid options are: ts, ts-packet, pes-packet, es-audio, es-video");
+            std::process::exit(1);
+        }
     }
+
+    Ok(())
 }
