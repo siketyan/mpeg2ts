@@ -51,7 +51,11 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
         }
     }
 
-    fn handle_pes_payload(&mut self, pid: Pid, pes: Pes) -> Result<Option<PesPacket<Vec<u8>>>> {
+    fn handle_pes_start_payload(
+        &mut self,
+        pid: Pid,
+        pes: Pes,
+    ) -> Result<Option<PesPacket<Vec<u8>>>> {
         let data_len = if pes.pes_packet_len == 0 {
             None
         } else {
@@ -87,7 +91,11 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
         }
     }
 
-    fn handle_raw_payload(&mut self, pid: Pid, data: &Bytes) -> Result<Option<PesPacket<Vec<u8>>>> {
+    fn handle_pes_continuation_payload(
+        &mut self,
+        pid: Pid,
+        data: &Bytes,
+    ) -> Result<Option<PesPacket<Vec<u8>>>> {
         let mut partial = self
             .pes_packets
             .remove(&pid)
@@ -119,8 +127,12 @@ impl<R: ReadTsPacket> ReadPesPacket for PesPacketReader<R> {
         while let Some(ts_packet) = self.ts_packet_reader.read_ts_packet()? {
             let pid = ts_packet.header.pid;
             let result = match ts_packet.payload {
-                Some(TsPayload::Pes(payload)) => self.handle_pes_payload(pid, payload)?,
-                Some(TsPayload::Raw(payload)) => self.handle_raw_payload(pid, &payload)?,
+                Some(TsPayload::PesStart(payload)) => {
+                    self.handle_pes_start_payload(pid, payload)?
+                }
+                Some(TsPayload::PesContinuation(payload)) => {
+                    self.handle_pes_continuation_payload(pid, &payload)?
+                }
                 _ => None,
             };
             if result.is_some() {
