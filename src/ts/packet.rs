@@ -57,7 +57,10 @@ impl TsPacket {
         };
         let payload_unit_start_indicator = !matches!(
             self.payload,
-            Some(TsPayload::Raw(_)) | Some(TsPayload::Null(_)) | None
+            Some(TsPayload::PesContinuation(_))
+                | Some(TsPayload::Raw(_))
+                | Some(TsPayload::Null(_))
+                | None
         );
         self.header.write_to(
             &mut writer,
