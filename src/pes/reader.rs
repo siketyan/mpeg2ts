@@ -78,11 +78,13 @@ impl<R: ReadTsPacket> PesPacketReader<R> {
         };
         let partial = PartialPesPacket { packet, data_len };
         if let Some(pred) = self.pes_packets.insert(pid, partial) {
-            if pred.data_len.is_some() && pred.data_len != Some(pred.packet.data.len()) {
+            if let Some(data_len) = pred.data_len
+                && data_len != pred.packet.data.len()
+            {
                 return Err(Error::invalid_input(format!(
                     "Mismatched PES packet data length: actual={}, expected={}",
                     pred.packet.data.len(),
-                    pred.data_len.expect("Never fails")
+                    data_len,
                 )));
             }
             Ok(Some(pred.packet))
