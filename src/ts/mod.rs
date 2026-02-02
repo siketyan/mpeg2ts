@@ -40,7 +40,9 @@ mod writer;
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::es::StreamId;
     use crate::es::StreamType;
+    use crate::pes::{PesHeader, PesPacketReader, ReadPesPacket};
 
     #[test]
     fn pat() {
@@ -173,6 +175,62 @@ mod test {
                 ],
             })),
         }
+    }
+
+    #[test]
+    fn pes_start_and_continuation_are_reassembled() {
+        let pid = Pid::new(258).unwrap();
+        let header = PesHeader {
+            stream_id: StreamId::new_video(StreamId::VIDEO_MIN).unwrap(),
+            priority: false,
+            data_alignment_indicator: false,
+            copyright: false,
+            original_or_copy: false,
+            pts: None,
+            dts: None,
+            escr: None,
+        };
+        let pes = payload::Pes {
+            header,
+            pes_packet_len: 7,
+            data: payload::Bytes::new(&[1, 2]).unwrap(),
+        };
+        let start_packet = TsPacket {
+            header: TsHeader {
+                transport_error_indicator: false,
+                transport_priority: false,
+                pid,
+                transport_scrambling_control: TransportScramblingControl::NotScrambled,
+                continuity_counter: ContinuityCounter::from_u8(0).unwrap(),
+            },
+            adaptation_field: None,
+            payload: Some(TsPayload::PesStart(pes)),
+        };
+        let continuation_packet = TsPacket {
+            header: TsHeader {
+                transport_error_indicator: false,
+                transport_priority: false,
+                pid,
+                transport_scrambling_control: TransportScramblingControl::NotScrambled,
+                continuity_counter: ContinuityCounter::from_u8(1).unwrap(),
+            },
+            adaptation_field: None,
+            payload: Some(TsPayload::PesContinuation(
+                payload::Bytes::new(&[3, 4]).unwrap(),
+            )),
+        };
+
+        let mut writer = TsPacketWriter::new(Vec::new());
+        writer.write_ts_packet(&pat_packet()).unwrap();
+        writer.write_ts_packet(&pmt_packet()).unwrap();
+        writer.write_ts_packet(&start_packet).unwrap();
+        writer.write_ts_packet(&continuation_packet).unwrap();
+        let stream = writer.into_stream();
+
+        let mut reader = PesPacketReader::new(TsPacketReader::new(&stream[..]));
+        let packet = reader.read_pes_packet().unwrap().unwrap();
+        assert_eq!(packet.data, vec![1, 2, 3, 4]);
+        assert!(reader.read_pes_packet().unwrap().is_none());
     }
 
     #[test]
