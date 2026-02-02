@@ -88,10 +88,10 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                         PidKind::Pes => {
                             if payload_unit_start_indicator {
                                 let pes = Pes::read_from(&mut reader)?;
-                                TsPayload::Pes(pes)
+                                TsPayload::PesStart(pes)
                             } else {
                                 let bytes = Bytes::read_from(&mut reader)?;
-                                TsPayload::Raw(bytes)
+                                TsPayload::PesContinuation(bytes)
                             }
                         }
                     }

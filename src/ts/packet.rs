@@ -57,7 +57,10 @@ impl TsPacket {
         };
         let payload_unit_start_indicator = !matches!(
             self.payload,
-            Some(TsPayload::Raw(_)) | Some(TsPayload::Null(_)) | None
+            Some(TsPayload::PesContinuation(_))
+                | Some(TsPayload::Raw(_))
+                | Some(TsPayload::Null(_))
+                | None
         );
         self.header.write_to(
             &mut writer,
@@ -154,7 +157,8 @@ impl TsHeader {
 pub enum TsPayload {
     Pat(Pat),
     Pmt(Pmt),
-    Pes(Pes),
+    PesStart(Pes),
+    PesContinuation(Bytes),
     Section(Section),
     Null(Null),
     Raw(Bytes),
@@ -164,7 +168,8 @@ impl TsPayload {
         match *self {
             TsPayload::Pat(ref x) => x.write_to(writer),
             TsPayload::Pmt(ref x) => x.write_to(writer),
-            TsPayload::Pes(ref x) => x.write_to(writer),
+            TsPayload::PesStart(ref x) => x.write_to(writer),
+            TsPayload::PesContinuation(ref x) => x.write_to(writer),
             TsPayload::Section(ref x) => x.write_to(writer),
             TsPayload::Null(_) => Ok(()),
             TsPayload::Raw(ref x) => x.write_to(writer),
