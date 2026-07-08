@@ -55,18 +55,8 @@ impl TsPacket {
                 return Err(Error::invalid_input("Reserved for future use"));
             }
         };
-        let payload_unit_start_indicator = !matches!(
-            self.payload,
-            Some(TsPayload::PesContinuation(_))
-                | Some(TsPayload::Raw(_))
-                | Some(TsPayload::Null(_))
-                | None
-        );
-        self.header.write_to(
-            &mut writer,
-            adaptation_field_control,
-            payload_unit_start_indicator,
-        )?;
+        self.header
+            .write_to(&mut writer, adaptation_field_control)?;
 
         if let Some(ref adaptation_field) = self.adaptation_field {
             let adaptation_field_len = (free_len - 1) as u8;
@@ -87,13 +77,12 @@ pub struct TsHeader {
     pub transport_error_indicator: bool,
     pub transport_priority: bool,
     pub pid: Pid,
+    pub payload_unit_start_indicator: bool,
     pub transport_scrambling_control: TransportScramblingControl,
     pub continuity_counter: ContinuityCounter,
 }
 impl TsHeader {
-    pub(super) fn read_from<R: Read>(
-        mut reader: R,
-    ) -> Result<(Self, AdaptationFieldControl, bool)> {
+    pub(super) fn read_from<R: Read>(mut reader: R) -> Result<(Self, AdaptationFieldControl)> {
         let sync_byte = reader.read_u8()?;
         if sync_byte != TsPacket::SYNC_BYTE {
             return Err(Error::invalid_input(format!(
@@ -118,26 +107,22 @@ impl TsHeader {
             transport_error_indicator,
             transport_priority,
             pid,
+            payload_unit_start_indicator,
             transport_scrambling_control,
             continuity_counter,
         };
-        Ok((
-            header,
-            adaptation_field_control,
-            payload_unit_start_indicator,
-        ))
+        Ok((header, adaptation_field_control))
     }
 
     fn write_to<W: Write>(
         &self,
         mut writer: W,
         adaptation_field_control: AdaptationFieldControl,
-        payload_unit_start_indicator: bool,
     ) -> Result<()> {
         writer.write_u8(TsPacket::SYNC_BYTE)?;
 
         let n = ((self.transport_error_indicator as u16) << 15)
-            | ((payload_unit_start_indicator as u16) << 14)
+            | ((self.payload_unit_start_indicator as u16) << 14)
             | ((self.transport_priority as u16) << 13)
             | self.pid.as_u16();
         writer.write_u16(n)?;

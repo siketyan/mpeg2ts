@@ -85,6 +85,7 @@ mod test {
                 transport_error_indicator: false,
                 transport_priority: false,
                 pid: Pid::from(0),
+                payload_unit_start_indicator: true,
                 transport_scrambling_control: TransportScramblingControl::NotScrambled,
                 continuity_counter: ContinuityCounter::from_u8(1).unwrap(),
             },
@@ -148,6 +149,27 @@ mod test {
         assert_eq!(pmt.es_info[0].elementary_pid, Pid::new(257).unwrap());
         assert_eq!(pmt.es_info[1].stream_type, StreamType::H264);
         assert_eq!(pmt.es_info[1].elementary_pid, Pid::new(258).unwrap());
+    }
+
+    #[test]
+    fn scrambled_payload_is_read_as_raw() {
+        let mut bytes = [0xff; TsPacket::SIZE];
+        bytes[0] = TsPacket::SYNC_BYTE;
+        bytes[1] = 0x41;
+        bytes[2] = 0x00;
+        bytes[3] = 0x90;
+
+        let mut reader = TsPacketReader::new(&bytes[..]);
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+
+        assert_eq!(packet.header.pid, Pid::new(0x0100).unwrap());
+        assert!(packet.header.payload_unit_start_indicator);
+        assert_eq!(
+            packet.header.transport_scrambling_control,
+            TransportScramblingControl::ScrambledWithEvenKey
+        );
+        assert!(matches!(packet.payload, Some(TsPayload::Raw(_))));
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
     }
 
     fn split_pmt_packet_bytes() -> Vec<u8> {
@@ -221,6 +243,7 @@ mod test {
                 transport_error_indicator: false,
                 transport_priority: false,
                 pid: Pid::new(480).unwrap(),
+                payload_unit_start_indicator: true,
                 transport_scrambling_control: TransportScramblingControl::NotScrambled,
                 continuity_counter: ContinuityCounter::from_u8(0).unwrap(),
             },
@@ -277,6 +300,7 @@ mod test {
                 transport_error_indicator: false,
                 transport_priority: false,
                 pid,
+                payload_unit_start_indicator: true,
                 transport_scrambling_control: TransportScramblingControl::NotScrambled,
                 continuity_counter: ContinuityCounter::from_u8(0).unwrap(),
             },
@@ -288,6 +312,7 @@ mod test {
                 transport_error_indicator: false,
                 transport_priority: false,
                 pid,
+                payload_unit_start_indicator: false,
                 transport_scrambling_control: TransportScramblingControl::NotScrambled,
                 continuity_counter: ContinuityCounter::from_u8(1).unwrap(),
             },

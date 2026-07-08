@@ -12,7 +12,8 @@ pub struct Pes {
     pub data: Bytes,
 }
 impl Pes {
-    pub(super) fn read_from<R: Read>(mut reader: R) -> Result<Self> {
+    /// Reads a PES payload.
+    pub fn read_from<R: Read>(mut reader: R) -> Result<Self> {
         let (header, pes_packet_len) = PesHeader::read_from(&mut reader)?;
         let data = Bytes::read_from(reader)?;
         Ok(Pes {

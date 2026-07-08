@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
-use crate::ts::{AdaptationField, Pid, TsHeader, TsPacket, TsPayload};
+use crate::ts::{AdaptationField, Pid, TransportScramblingControl, TsHeader, TsPacket, TsPayload};
 use std::collections::HashMap;
 use std::io::Read;
 
@@ -53,8 +53,7 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
             return Ok(None);
         }
 
-        let (header, adaptation_field_control, payload_unit_start_indicator) =
-            TsHeader::read_from(peek.chain(&mut reader))?;
+        let (header, adaptation_field_control) = TsHeader::read_from(peek.chain(&mut reader))?;
 
         let adaptation_field = if adaptation_field_control.has_adaptation_field() {
             AdaptationField::read_from(&mut reader)?
@@ -63,13 +62,22 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
         };
 
         let payload = if adaptation_field_control.has_payload() {
+            if header.transport_scrambling_control != TransportScramblingControl::NotScrambled {
+                let bytes = Bytes::read_from(&mut reader)?;
+                return Ok(Some(TsPacket {
+                    header,
+                    adaptation_field,
+                    payload: Some(TsPayload::Raw(bytes)),
+                }));
+            }
+
             let payload = match header.pid.as_u16() {
                 Pid::PAT => {
                     let bytes = Bytes::read_from(&mut reader)?;
                     if let Some(section) = read_psi_section(
                         &mut self.psi_buffers,
                         header.pid,
-                        payload_unit_start_indicator,
+                        header.payload_unit_start_indicator,
                         &bytes,
                     )? {
                         let pat = Pat::read_from(&section[..])?;
@@ -104,7 +112,7 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                             if let Some(section) = read_psi_section(
                                 &mut self.psi_buffers,
                                 header.pid,
-                                payload_unit_start_indicator,
+                                header.payload_unit_start_indicator,
                                 &bytes,
                             )? {
                                 let pmt = Pmt::read_from(&section[..])?;
@@ -117,7 +125,7 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                             }
                         }
                         PidKind::Pes => {
-                            if payload_unit_start_indicator {
+                            if header.payload_unit_start_indicator {
                                 let pes = Pes::read_from(&mut reader)?;
                                 TsPayload::PesStart(pes)
                             } else {
@@ -130,7 +138,7 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                             if let Some(section) = read_psi_section(
                                 &mut self.psi_buffers,
                                 header.pid,
-                                payload_unit_start_indicator,
+                                header.payload_unit_start_indicator,
                                 &bytes,
                             )? {
                                 let pointer_field = section[0];
