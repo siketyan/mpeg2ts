@@ -74,9 +74,13 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                     TsPayload::Raw(bytes)
                 }
                 _ => {
-                    let kind = self.pids.get(&header.pid).cloned().ok_or_else(|| {
-                        crate::Error::invalid_input(format!("Unknown PID: header={:?}", header))
-                    })?;
+                    let Some(kind) = self.pids.get(&header.pid).cloned() else {
+                        let _ = Bytes::read_from(&mut reader)?;
+                        return Err(crate::Error::invalid_input(format!(
+                            "Unknown PID: header={:?}",
+                            header
+                        )));
+                    };
                     match kind {
                         PidKind::Pmt => {
                             let pmt = Pmt::read_from(&mut reader)?;
