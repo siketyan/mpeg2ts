@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt};
+use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
 use crate::ts::{AdaptationField, Pid, TsHeader, TsPacket, TsPayload};
 use std::collections::HashMap;
 use std::io::Read;
@@ -37,6 +37,11 @@ impl<R: Read> TsPacketReader<R> {
     /// Converts `TsPacketReader` into the underlaying byte stream `R`.
     pub fn into_stream(self) -> R {
         self.stream
+    }
+
+    /// Registers a PID that should be read as PSI sections.
+    pub fn add_section_pid(&mut self, pid: Pid) {
+        self.pids.insert(pid, PidKind::Section);
     }
 }
 impl<R: Read> ReadTsPacket for TsPacketReader<R> {
@@ -120,6 +125,24 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                                 TsPayload::PesContinuation(bytes)
                             }
                         }
+                        PidKind::Section => {
+                            let bytes = Bytes::read_from(&mut reader)?;
+                            if let Some(section) = read_psi_section(
+                                &mut self.psi_buffers,
+                                header.pid,
+                                payload_unit_start_indicator,
+                                &bytes,
+                            )? {
+                                let pointer_field = section[0];
+                                let data = Bytes::new(&section[1..])?;
+                                TsPayload::Section(Section {
+                                    pointer_field,
+                                    data,
+                                })
+                            } else {
+                                TsPayload::Raw(bytes)
+                            }
+                        }
                     }
                 }
             };
@@ -189,4 +212,5 @@ fn read_psi_section(
 enum PidKind {
     Pmt,
     Pes,
+    Section,
 }
