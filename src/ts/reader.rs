@@ -17,6 +17,7 @@ pub trait ReadTsPacket {
 pub struct TsPacketReader<R> {
     stream: R,
     pids: HashMap<Pid, PidKind>,
+    psi_buffers: HashMap<Pid, Vec<u8>>,
 }
 impl<R: Read> TsPacketReader<R> {
     /// Makes a new `TsPacketReader` instance.
@@ -24,6 +25,7 @@ impl<R: Read> TsPacketReader<R> {
         TsPacketReader {
             stream,
             pids: HashMap::new(),
+            psi_buffers: HashMap::new(),
         }
     }
 
@@ -58,11 +60,21 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
         let payload = if adaptation_field_control.has_payload() {
             let payload = match header.pid.as_u16() {
                 Pid::PAT => {
-                    let pat = Pat::read_from(&mut reader)?;
-                    for pa in &pat.table {
-                        self.pids.insert(pa.program_map_pid, PidKind::Pmt);
+                    let bytes = Bytes::read_from(&mut reader)?;
+                    if let Some(section) = read_psi_section(
+                        &mut self.psi_buffers,
+                        header.pid,
+                        payload_unit_start_indicator,
+                        &bytes,
+                    )? {
+                        let pat = Pat::read_from(&section[..])?;
+                        for pa in &pat.table {
+                            self.pids.insert(pa.program_map_pid, PidKind::Pmt);
+                        }
+                        TsPayload::Pat(pat)
+                    } else {
+                        TsPayload::Raw(bytes)
                     }
-                    TsPayload::Pat(pat)
                 }
                 Pid::NULL => {
                     let null = Null::read_from(&mut reader)?;
@@ -83,11 +95,21 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                     };
                     match kind {
                         PidKind::Pmt => {
-                            let pmt = Pmt::read_from(&mut reader)?;
-                            for es in &pmt.es_info {
-                                self.pids.insert(es.elementary_pid, PidKind::Pes);
+                            let bytes = Bytes::read_from(&mut reader)?;
+                            if let Some(section) = read_psi_section(
+                                &mut self.psi_buffers,
+                                header.pid,
+                                payload_unit_start_indicator,
+                                &bytes,
+                            )? {
+                                let pmt = Pmt::read_from(&section[..])?;
+                                for es in &pmt.es_info {
+                                    self.pids.insert(es.elementary_pid, PidKind::Pes);
+                                }
+                                TsPayload::Pmt(pmt)
+                            } else {
+                                TsPayload::Raw(bytes)
                             }
-                            TsPayload::Pmt(pmt)
                         }
                         PidKind::Pes => {
                             if payload_unit_start_indicator {
@@ -117,6 +139,50 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
             payload,
         }))
     }
+}
+
+fn read_psi_section(
+    psi_buffers: &mut HashMap<Pid, Vec<u8>>,
+    pid: Pid,
+    payload_unit_start_indicator: bool,
+    payload: &[u8],
+) -> Result<Option<Vec<u8>>> {
+    let buffer = psi_buffers.entry(pid).or_default();
+
+    if payload_unit_start_indicator {
+        let Some(pointer_field) = payload.first().copied() else {
+            return Ok(None);
+        };
+        let section_offset = 1 + usize::from(pointer_field);
+        if section_offset >= payload.len() {
+            buffer.clear();
+            return Ok(None);
+        }
+
+        buffer.clear();
+        buffer.extend_from_slice(&payload[section_offset..]);
+    } else if !buffer.is_empty() {
+        buffer.extend_from_slice(payload);
+    } else {
+        return Ok(None);
+    }
+
+    if buffer.len() < 3 {
+        return Ok(None);
+    }
+
+    let section_length = usize::from(u16::from_be_bytes([buffer[1] & 0x0F, buffer[2]]));
+    let section_end = 3 + section_length;
+    if buffer.len() < section_end {
+        return Ok(None);
+    }
+
+    let mut section = Vec::with_capacity(section_end + 1);
+    section.push(0); // pointer_field
+    section.extend_from_slice(&buffer[..section_end]);
+    buffer.drain(..section_end);
+
+    Ok(Some(section))
 }
 
 #[derive(Debug, Clone)]

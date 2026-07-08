@@ -43,6 +43,8 @@ mod test {
     use crate::es::StreamId;
     use crate::es::StreamType;
     use crate::pes::{PesHeader, PesPacketReader, ReadPesPacket};
+    use crate::util::{WithCrc32, WriteBytesExt};
+    use std::io::Write;
 
     #[test]
     fn pat() {
@@ -120,6 +122,81 @@ mod test {
         assert_eq!(packet.header, pmt_packet().header);
         assert_eq!(packet.payload, pmt_packet().payload);
         assert_eq!(reader.read_ts_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn split_pmt() {
+        let mut bytes = Vec::new();
+        bytes.extend(pat_packet_bytes());
+        bytes.extend(split_pmt_packet_bytes());
+        let mut reader = TsPacketReader::new(&bytes[..]);
+
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+        assert_eq!(packet.payload, pat_packet().payload);
+
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+        assert!(matches!(packet.payload, Some(TsPayload::Raw(_))));
+
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+        let Some(TsPayload::Pmt(pmt)) = packet.payload else {
+            panic!("expected split PMT to be reassembled");
+        };
+        assert_eq!(pmt.program_num, 1);
+        assert_eq!(pmt.pcr_pid, Some(Pid::new(258).unwrap()));
+        assert_eq!(pmt.es_info.len(), 2);
+        assert_eq!(pmt.es_info[0].stream_type, StreamType::AdtsAac);
+        assert_eq!(pmt.es_info[0].elementary_pid, Pid::new(257).unwrap());
+        assert_eq!(pmt.es_info[1].stream_type, StreamType::H264);
+        assert_eq!(pmt.es_info[1].elementary_pid, Pid::new(258).unwrap());
+    }
+
+    fn split_pmt_packet_bytes() -> Vec<u8> {
+        let section = long_pmt_section();
+        assert!(section.len() > 183);
+
+        let mut bytes = Vec::new();
+        bytes.extend([0x47, 0x41, 0xE0, 0x10]);
+        bytes.push(0); // pointer field
+        bytes.extend(&section[..183]);
+
+        bytes.extend([0x47, 0x01, 0xE0, 0x11]);
+        bytes.extend(&section[183..]);
+        bytes.resize(188 * 2, 0xFF);
+        bytes
+    }
+
+    fn long_pmt_section() -> Vec<u8> {
+        const DESCRIPTOR_DATA_LEN: usize = 160;
+        let program_info_len = 2 + DESCRIPTOR_DATA_LEN;
+        let table_data_len = 2 + 2 + program_info_len + 5 + 5;
+        let syntax_section_len = 2 + 1 + 1 + 1 + table_data_len + 4;
+
+        let mut section = Vec::new();
+        let crc32 = {
+            let mut writer = WithCrc32::new(&mut section);
+            writer.write_u8(0x02).unwrap();
+            writer
+                .write_u16(0xB000 | syntax_section_len as u16)
+                .unwrap();
+            writer.write_u16(1).unwrap();
+            writer.write_u8(0xC1).unwrap();
+            writer.write_u8(0).unwrap();
+            writer.write_u8(0).unwrap();
+            writer.write_u16(0xE000 | 258).unwrap();
+            writer.write_u16(0xF000 | program_info_len as u16).unwrap();
+            writer.write_u8(5).unwrap();
+            writer.write_u8(DESCRIPTOR_DATA_LEN as u8).unwrap();
+            writer.write_all(&[0; DESCRIPTOR_DATA_LEN]).unwrap();
+            writer.write_u8(StreamType::AdtsAac as u8).unwrap();
+            writer.write_u16(0xE000 | 257).unwrap();
+            writer.write_u16(0xF000).unwrap();
+            writer.write_u8(StreamType::H264 as u8).unwrap();
+            writer.write_u16(0xE000 | 258).unwrap();
+            writer.write_u16(0xF000).unwrap();
+            writer.crc32()
+        };
+        section.write_u32(crc32).unwrap();
+        section
     }
 
     fn pmt_packet_bytes() -> &'static [u8] {
