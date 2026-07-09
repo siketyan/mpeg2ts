@@ -93,14 +93,17 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                     let null = Null::read_from(&mut reader)?;
                     TsPayload::Null(null)
                 }
-                0x01..=0x1F | 0x1FFB => {
-                    // Unknown (unsupported) packets
-                    let bytes = Bytes::read_from(&mut reader)?;
-                    TsPayload::Raw(bytes)
-                }
                 _ => {
                     let Some(kind) = self.pids.get(&header.pid).cloned() else {
-                        let _ = Bytes::read_from(&mut reader)?;
+                        let bytes = Bytes::read_from(&mut reader)?;
+                        if matches!(header.pid.as_u16(), 0x01..=0x1F | 0x1FFB) {
+                            return Ok(Some(TsPacket {
+                                header,
+                                adaptation_field,
+                                payload: Some(TsPayload::Raw(bytes)),
+                            }));
+                        }
+
                         return Err(crate::Error::invalid_input(format!(
                             "Unknown PID: header={:?}",
                             header
@@ -135,20 +138,18 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                         }
                         PidKind::Section => {
                             let bytes = Bytes::read_from(&mut reader)?;
-                            if let Some(section) = read_psi_section(
-                                &mut self.psi_buffers,
-                                header.pid,
-                                header.payload_unit_start_indicator,
-                                &bytes,
-                            )? {
-                                let pointer_field = section[0];
-                                let data = Bytes::new(&section[1..])?;
+                            if header.payload_unit_start_indicator {
+                                let pointer_field = bytes.first().copied().unwrap_or_default();
+                                let data = Bytes::new(bytes.get(1..).unwrap_or_default())?;
                                 TsPayload::Section(Section {
                                     pointer_field,
                                     data,
                                 })
                             } else {
-                                TsPayload::Raw(bytes)
+                                TsPayload::Section(Section {
+                                    pointer_field: 0,
+                                    data: bytes,
+                                })
                             }
                         }
                     }
