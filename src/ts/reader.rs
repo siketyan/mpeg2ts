@@ -82,7 +82,9 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                     )? {
                         let pat = Pat::read_from(&section[..])?;
                         for pa in &pat.table {
-                            self.pids.insert(pa.program_map_pid, PidKind::Pmt);
+                            if pa.program_num != 0 {
+                                self.pids.insert(pa.program_map_pid, PidKind::Pmt);
+                            }
                         }
                         TsPayload::Pat(pat)
                     } else {
