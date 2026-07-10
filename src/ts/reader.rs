@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::es::StreamType;
 use crate::ts::payload::{Bytes, Null, Pat, Pes, Pmt, Section};
 use crate::ts::{AdaptationField, Pid, TransportScramblingControl, TsHeader, TsPacket, TsPayload};
 use std::collections::HashMap;
@@ -46,14 +47,19 @@ impl<R: Read> TsPacketReader<R> {
 }
 impl<R: Read> ReadTsPacket for TsPacketReader<R> {
     fn read_ts_packet(&mut self) -> Result<Option<TsPacket>> {
-        let mut reader = self.stream.by_ref().take(TsPacket::SIZE as u64);
-        let mut peek = [0; 1];
-        let eos = reader.read(&mut peek)? == 0;
-        if eos {
-            return Ok(None);
+        // Read a complete TS packet before parsing it. If parsing directly from
+        // the underlying stream fails partway through a packet, dropping a
+        // partially consumed `Take` leaves the stream between packet boundaries.
+        let mut packet = [0; TsPacket::SIZE];
+        if let Err(error) = self.stream.read_exact(&mut packet) {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(None);
+            }
+            return Err(error.into());
         }
+        let mut reader = &packet[..];
 
-        let (header, adaptation_field_control) = TsHeader::read_from(peek.chain(&mut reader))?;
+        let (header, adaptation_field_control) = TsHeader::read_from(&mut reader)?;
 
         let adaptation_field = if adaptation_field_control.has_adaptation_field() {
             AdaptationField::read_from(&mut reader)?
@@ -98,18 +104,11 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                 _ => {
                     let Some(kind) = self.pids.get(&header.pid).cloned() else {
                         let bytes = Bytes::read_from(&mut reader)?;
-                        if matches!(header.pid.as_u16(), 0x01..=0x1F | 0x1FFB) {
-                            return Ok(Some(TsPacket {
-                                header,
-                                adaptation_field,
-                                payload: Some(TsPayload::Raw(bytes)),
-                            }));
-                        }
-
-                        return Err(crate::Error::invalid_input(format!(
-                            "Unknown PID: header={:?}",
-                            header
-                        )));
+                        return Ok(Some(TsPacket {
+                            header,
+                            adaptation_field,
+                            payload: Some(TsPayload::Raw(bytes)),
+                        }));
                     };
                     match kind {
                         PidKind::Pmt => {
@@ -122,7 +121,12 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
                             )? {
                                 let pmt = Pmt::read_from(&section[..])?;
                                 for es in &pmt.es_info {
-                                    self.pids.insert(es.elementary_pid, PidKind::Pes);
+                                    let kind = match es.stream_type {
+                                        StreamType::DsmCcTabledData => PidKind::Section,
+                                        _ => PidKind::Pes,
+                                    };
+
+                                    self.pids.insert(es.elementary_pid, kind);
                                 }
                                 TsPayload::Pmt(pmt)
                             } else {
@@ -162,7 +166,7 @@ impl<R: Read> ReadTsPacket for TsPacketReader<R> {
             None
         };
 
-        if reader.limit() != 0 {
+        if !reader.is_empty() {
             return Err(crate::Error::invalid_input(
                 "Unexpected remaining data in TS packet",
             ));

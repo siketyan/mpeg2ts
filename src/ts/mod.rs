@@ -172,6 +172,79 @@ mod test {
         assert_eq!(reader.read_ts_packet().unwrap(), None);
     }
 
+    #[test]
+    fn unregistered_pid_is_read_as_raw() {
+        let mut bytes = [0xff; TsPacket::SIZE];
+        bytes[..4].copy_from_slice(&[0x47, 0x41, 0x00, 0x10]);
+
+        let mut reader = TsPacketReader::new(&bytes[..]);
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+
+        assert_eq!(packet.header.pid, Pid::new(0x0100).unwrap());
+        assert!(matches!(packet.payload, Some(TsPayload::Raw(_))));
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
+    }
+
+    #[test]
+    fn dsm_cc_tabled_data_is_read_as_a_section() {
+        let pid = Pid::new(0x0350).unwrap();
+        let mut pmt_packet = pmt_packet();
+        let Some(TsPayload::Pmt(pmt)) = &mut pmt_packet.payload else {
+            unreachable!();
+        };
+        pmt.es_info.push(EsInfo {
+            stream_type: StreamType::DsmCcTabledData,
+            elementary_pid: pid,
+            descriptors: vec![],
+        });
+
+        let mut writer = TsPacketWriter::new(Vec::new());
+        writer.write_ts_packet(&pat_packet()).unwrap();
+        writer.write_ts_packet(&pmt_packet).unwrap();
+        let mut stream = writer.into_stream();
+
+        let mut section_packet = [0xff; TsPacket::SIZE];
+        section_packet[..8].copy_from_slice(&[0x47, 0x43, 0x50, 0x10, 0x00, 0x3b, 0xb0, 0x00]);
+        stream.extend(section_packet);
+
+        let mut reader = TsPacketReader::new(&stream[..]);
+        reader.read_ts_packet().unwrap().unwrap();
+        reader.read_ts_packet().unwrap().unwrap();
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+
+        let Some(TsPayload::Section(section)) = packet.payload else {
+            panic!("expected a DSM-CC section");
+        };
+        assert_eq!(section.pointer_field, 0);
+        assert_eq!(&section.data[..3], &[0x3b, 0xb0, 0x00]);
+    }
+
+    #[test]
+    fn parse_error_does_not_misalign_the_next_packet() {
+        let mut bytes = Vec::new();
+        bytes.extend(pat_packet_bytes());
+        bytes.extend(pmt_packet_bytes());
+
+        let mut malformed = [0xff; TsPacket::SIZE];
+        malformed[..4].copy_from_slice(&[0x47, 0x41, 0x02, 0x10]);
+        malformed[4..7].copy_from_slice(&[0x00, 0x00, 0x00]);
+        bytes.extend(malformed);
+
+        let mut null = [0xff; TsPacket::SIZE];
+        null[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]);
+        bytes.extend(null);
+
+        let mut reader = TsPacketReader::new(&bytes[..]);
+        reader.read_ts_packet().unwrap().unwrap();
+        reader.read_ts_packet().unwrap().unwrap();
+
+        assert!(reader.read_ts_packet().is_err());
+
+        let packet = reader.read_ts_packet().unwrap().unwrap();
+        assert_eq!(packet.header.pid, Pid::new(Pid::NULL).unwrap());
+        assert_eq!(reader.read_ts_packet().unwrap(), None);
+    }
+
     fn split_pmt_packet_bytes() -> Vec<u8> {
         let section = long_pmt_section();
         assert!(section.len() > 183);
